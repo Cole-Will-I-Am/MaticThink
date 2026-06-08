@@ -68,6 +68,24 @@ async function handleValidate(request, env) {
   }
 }
 
+// The list of models available on the Ollama backend (its public catalog),
+// so the UI can let users add any of them to their personal picker.
+async function handleCatalog(request, env) {
+  const auth = bearer(request);
+  try {
+    const r = await fetch(upstreamBase(env) + "/v1/models", {
+      headers: auth ? { authorization: auth } : {},
+    });
+    if (!r.ok) return json({ models: [] }, 200);
+    const data = await r.json().catch(() => ({}));
+    const ids = Array.isArray(data.data) ? data.data.map((m) => m.id).filter(Boolean) : [];
+    ids.sort((a, b) => a.localeCompare(b));
+    return json({ models: ids }, 200);
+  } catch {
+    return json({ models: [] }, 200);
+  }
+}
+
 async function handleChat(request, env) {
   const auth = bearer(request);
   if (!auth) return json({ error: "Missing API key." }, 401);
@@ -113,6 +131,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/api/models") return json({ models: modelList(env) });
+    if (url.pathname === "/api/catalog") return handleCatalog(request, env);
     if (url.pathname === "/api/validate") {
       if (request.method !== "POST") return json({ error: "Use POST." }, 405);
       return handleValidate(request, env);

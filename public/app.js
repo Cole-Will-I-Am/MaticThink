@@ -12,6 +12,9 @@ const els = {
   input: $('input'), send: $('send'), err: $('err'),
   settingsBtn: $('settingsBtn'), settingsPanel: $('settingsPanel'),
   tempSlider: $('tempSlider'), tempVal: $('tempVal'),
+  manageModelsBtn: $('manageModelsBtn'), modelModal: $('modelModal'), mmClose: $('mmClose'),
+  mmYours: $('mmYours'), mmInput: $('mmInput'), mmAdd: $('mmAdd'),
+  mmSearch: $('mmSearch'), mmCatalog: $('mmCatalog'), mmCount: $('mmCount'),
 };
 
 const DEFAULT_TEMP = 0.8;
@@ -103,14 +106,88 @@ function showApp(show) {
   els.app.classList.toggle('hidden', !show);
   if (show) els.input.focus(); else els.keyInput.focus();
 }
-async function loadModels() {
-  try {
-    const r = await fetch('/api/models');
-    const data = await r.json();
-    const list = (data.models && data.models.length) ? data.models : ['default'];
-    els.model.innerHTML = list.map((m) => `<option value="${m}">${m}</option>`).join('');
-  } catch (e) { els.model.innerHTML = '<option value="default">default</option>'; }
+/* ---------- Model list (per-user, curated) ---------- */
+const MODELS_KEY = 'mt_models';
+let catalogModels = [];
+let catalogLoaded = false;
+
+function getUserModels() {
+  try { const v = JSON.parse(localStorage.getItem(MODELS_KEY)); if (Array.isArray(v) && v.length) return v; } catch (e) {}
+  return null;
 }
+function setUserModels(list) {
+  const uniq = [...new Set(list.filter(Boolean))];
+  try { localStorage.setItem(MODELS_KEY, JSON.stringify(uniq)); } catch (e) {}
+  return uniq;
+}
+function populateModelSelect() {
+  const list = getUserModels() || ['default'];
+  const cur = els.model.value;
+  els.model.innerHTML = '';
+  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m; els.model.appendChild(o); }
+  if (list.includes(cur)) els.model.value = cur;
+}
+async function loadModels() {
+  if (!getUserModels()) {                       // seed from the site default once
+    try { const r = await fetch('/api/models'); const d = await r.json(); if (d.models && d.models.length) setUserModels(d.models); } catch (e) {}
+  }
+  populateModelSelect();
+}
+
+function addModel(name) {
+  name = (name || '').trim();
+  if (!name) return;
+  const list = getUserModels() || [];
+  if (!list.includes(name)) setUserModels([...list, name]);
+  populateModelSelect(); renderYours(); renderCatalog();
+}
+function removeModel(name) {
+  setUserModels((getUserModels() || []).filter((m) => m !== name));
+  populateModelSelect(); renderYours(); renderCatalog();
+}
+
+function renderYours() {
+  const list = getUserModels() || [];
+  els.mmYours.innerHTML = '';
+  if (!list.length) { els.mmYours.innerHTML = '<div class="mm-empty">No models yet — add one below.</div>'; return; }
+  for (const m of list) {
+    const chip = document.createElement('span'); chip.className = 'mm-chip';
+    const name = document.createElement('span'); name.textContent = m;
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.title = 'Remove';
+    x.addEventListener('click', () => removeModel(m));
+    chip.appendChild(name); chip.appendChild(x); els.mmYours.appendChild(chip);
+  }
+}
+function renderCatalog() {
+  const q = (els.mmSearch.value || '').trim().toLowerCase();
+  const owned = new Set(getUserModels() || []);
+  els.mmCount.textContent = catalogModels.length ? '(' + catalogModels.length + ')' : '';
+  if (!catalogLoaded) { els.mmCatalog.innerHTML = '<div class="mm-loading">Loading catalog…</div>'; return; }
+  const list = catalogModels.filter((m) => !q || m.toLowerCase().includes(q));
+  els.mmCatalog.innerHTML = '';
+  if (!list.length) { els.mmCatalog.innerHTML = '<div class="mm-loading">No matching models.</div>'; return; }
+  for (const m of list) {
+    const row = document.createElement('div'); row.className = 'mm-row';
+    const name = document.createElement('span'); name.textContent = m;
+    const btn = document.createElement('button'); btn.type = 'button';
+    if (owned.has(m)) { btn.textContent = 'Added'; btn.disabled = true; }
+    else { btn.textContent = '+ Add'; btn.addEventListener('click', () => addModel(m)); }
+    row.appendChild(name); row.appendChild(btn); els.mmCatalog.appendChild(row);
+  }
+}
+async function loadCatalog() {
+  try { const r = await fetch('/api/catalog', { headers: authHeader() }); const d = await r.json(); catalogModels = d.models || []; }
+  catch (e) { catalogModels = []; }
+  catalogLoaded = true; renderCatalog();
+}
+function openModelModal() {
+  els.settingsPanel.classList.add('hidden');
+  els.mmInput.value = ''; els.mmSearch.value = '';
+  els.modelModal.classList.remove('hidden');
+  renderYours(); renderCatalog();
+  if (!catalogLoaded) loadCatalog();
+}
+function closeModelModal() { els.modelModal.classList.add('hidden'); }
 async function validateKey(key) {
   const r = await fetch('/api/validate', { method: 'POST', headers: { authorization: 'Bearer ' + key } });
   return r.json().catch(() => ({ ok: false }));
@@ -393,6 +470,13 @@ els.tempSlider.addEventListener('input', () => {
   if (current) { current.temperature = t; if (current.messages.length) store.save(current); }
 });
 document.addEventListener('click', () => els.settingsPanel.classList.add('hidden'));
+
+els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); openModelModal(); });
+els.mmClose.addEventListener('click', closeModelModal);
+els.modelModal.addEventListener('click', (e) => { if (e.target === els.modelModal) closeModelModal(); });
+els.mmAdd.addEventListener('click', () => { addModel(els.mmInput.value); els.mmInput.value = ''; });
+els.mmInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { addModel(els.mmInput.value); els.mmInput.value = ''; } });
+els.mmSearch.addEventListener('input', renderCatalog);
 
 /* ---------- Boot ---------- */
 (async function boot() {

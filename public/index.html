@@ -59,6 +59,7 @@
               <input id="tempSlider" type="range" min="0" max="2" step="0.05" value="0.8" />
               <div class="sp-hint">Lower = focused &amp; precise · Higher = creative</div>
             </div>
+            <div class="sp-foot"><button id="manageModelsBtn" class="sp-link" type="button">Manage models →</button></div>
           </div>
         </div>
       </header>
@@ -75,6 +76,34 @@
           <button id="send" title="Send" aria-label="Send">↑</button>
         </div>
       </footer>
+    </div>
+  </div>
+
+  <!-- Model management modal -->
+  <div id="modelModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Models</span>
+        <button id="mmClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div class="mm-section">
+          <div class="mm-label">Your models</div>
+          <div id="mmYours" class="mm-chips"></div>
+        </div>
+        <div class="mm-section">
+          <div class="mm-label">Add by name</div>
+          <div class="mm-add">
+            <input id="mmInput" placeholder="e.g. gpt-oss:120b" autocomplete="off" spellcheck="false" />
+            <button id="mmAdd" class="mm-add-btn" type="button">Add</button>
+          </div>
+        </div>
+        <div class="mm-section">
+          <div class="mm-label">Ollama catalog <span id="mmCount" class="mm-count"></span></div>
+          <input id="mmSearch" class="mm-search" placeholder="Search the catalog…" autocomplete="off" />
+          <div id="mmCatalog" class="mm-catalog"></div>
+        </div>
+      </div>
     </div>
   </div>
 
