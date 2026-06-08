@@ -5,157 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>SEER · Mantic Think</title>
 <meta name="description" content="SEER — a quiet interface for thinking with Ollama models. Bring your own key." />
-<style>
-  :root {
-    --bg-primary: #08080a;
-    --bg-secondary: #121217;
-    --bg-tertiary: #191921;
-    --surface: #131319;
-    --border: rgba(255,255,255,0.07);
-    --border-light: rgba(255,255,255,0.10);
-    --text-primary: rgba(255,255,255,0.92);
-    --text-secondary: rgba(255,255,255,0.58);
-    --text-tertiary: rgba(255,255,255,0.34);
-    --accent: #6179ff;
-    --accent-2: #8c61f2;
-    --accent-soft: rgba(97,121,255,0.12);
-    --danger: #ff5252;
-    --radius: 22px;
-    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: var(--font);
-    -webkit-font-smoothing: antialiased;
-    display: flex; flex-direction: column;
-    overflow: hidden;
-  }
-  body::before {
-    content: ""; position: fixed; top: -180px; left: 50%;
-    width: 620px; height: 620px; transform: translateX(-50%);
-    background: radial-gradient(circle, rgba(97,121,255,0.10), rgba(140,97,242,0.05) 40%, transparent 70%);
-    filter: blur(40px); pointer-events: none; z-index: 0;
-  }
-  .wordmark {
-    font-weight: 300; letter-spacing: 0.42em; text-indent: 0.42em;
-    background: linear-gradient(120deg, var(--accent), var(--accent-2));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .hidden { display: none !important; }
-
-  /* ---------- Gate ---------- */
-  #gate {
-    position: relative; z-index: 3; flex: 1;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 24px; gap: 0;
-  }
-  #gate .wordmark { font-size: 30px; }
-  #gate .label { margin-top: 18px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-secondary); }
-  .card {
-    margin-top: 30px; width: 100%; max-width: 380px;
-    background: var(--surface); border: 0.5px solid var(--border);
-    border-radius: 20px; padding: 22px;
-    display: flex; flex-direction: column; gap: 14px;
-  }
-  .card input {
-    background: var(--bg-secondary); color: var(--text-primary);
-    border: 0.5px solid var(--border-light); border-radius: 14px;
-    padding: 15px 16px; font-family: var(--font); font-size: 15px; outline: none;
-  }
-  .card input:focus { border-color: rgba(97,121,255,0.4); }
-  .btn-primary {
-    border: none; border-radius: 999px; padding: 15px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
-    cursor: pointer; font-family: var(--font);
-  }
-  .btn-primary:disabled { background: var(--bg-tertiary); color: var(--text-tertiary); cursor: default; }
-  .hint { font-size: 12px; color: var(--text-tertiary); text-align: center; line-height: 1.5; }
-  .hint a { color: var(--accent); text-decoration: none; }
-  .gate-err { color: var(--danger); font-size: 12px; min-height: 14px; text-align: center; }
-
-  /* ---------- App ---------- */
-  header {
-    position: relative; z-index: 2;
-    display: flex; align-items: center; gap: 14px;
-    padding: 18px 22px; border-bottom: 0.5px solid var(--border); backdrop-filter: blur(8px);
-  }
-  header .brand { display: flex; flex-direction: column; gap: 2px; }
-  header .wordmark { font-size: 17px; }
-  .tagline { font-size: 9px; letter-spacing: 0.34em; color: var(--text-tertiary); text-transform: uppercase; }
-  .spacer { flex: 1; }
-  select#model {
-    appearance: none; background: var(--bg-secondary); color: var(--text-secondary);
-    border: 0.5px solid var(--border-light); border-radius: 999px;
-    padding: 8px 30px 8px 14px; font-family: var(--font);
-    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M1 3l4 4 4-4' stroke='%238a8a99' fill='none' stroke-width='1.2'/></svg>");
-    background-repeat: no-repeat; background-position: right 12px center;
-  }
-  button.ghost {
-    background: var(--accent-soft); color: var(--accent); border: none; border-radius: 999px;
-    padding: 8px 14px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; font-family: var(--font);
-  }
-  button.ghost:hover { background: rgba(97,121,255,0.18); }
-
-  main {
-    position: relative; z-index: 1; flex: 1; overflow-y: auto;
-    display: flex; flex-direction: column;
-  }
-  .thread {
-    width: 100%; max-width: 760px; margin: 0 auto; padding: 28px 20px 16px;
-    display: flex; flex-direction: column; gap: 18px;
-  }
-  .empty {
-    margin: auto; text-align: center; color: var(--text-tertiary);
-    display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 60px 20px;
-  }
-  .empty .wordmark { font-size: 22px; }
-  .empty p { font-size: 13px; font-weight: 300; margin: 0; }
-  .msg { display: flex; }
-  .msg.user { justify-content: flex-end; }
-  .col { max-width: 86%; }
-  .bubble {
-    padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.55;
-    white-space: pre-wrap; word-wrap: break-word;
-  }
-  .msg.user .bubble { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border-bottom-right-radius: 6px; }
-  .msg.assistant .bubble { background: var(--surface); border: 0.5px solid var(--border); color: var(--text-primary); border-bottom-left-radius: 6px; }
-  .role { font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--text-tertiary); margin: 0 4px 5px; }
-  .msg.user .role { text-align: right; }
-  .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
-  @keyframes blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
-
-  footer {
-    position: relative; z-index: 2; border-top: 0.5px solid var(--border);
-    background: var(--bg-primary); padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  }
-  .composer { width: 100%; max-width: 760px; margin: 0 auto; display: flex; align-items: flex-end; gap: 10px; }
-  textarea#input {
-    flex: 1; resize: none; background: var(--bg-secondary); color: var(--text-primary);
-    border: 0.5px solid var(--border-light); border-radius: var(--radius);
-    padding: 13px 18px; font-family: var(--font); font-size: 15px; line-height: 1.4; max-height: 160px; outline: none;
-  }
-  textarea#input::placeholder { color: var(--text-tertiary); }
-  textarea#input:focus { border-color: rgba(97,121,255,0.4); }
-  button#send {
-    width: 46px; height: 46px; flex: 0 0 46px; border: none; border-radius: 999px; cursor: pointer;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-size: 18px; display: grid; place-items: center;
-  }
-  button#send:disabled { background: var(--bg-tertiary); color: var(--text-tertiary); cursor: default; }
-  .err { max-width: 760px; margin: 0 auto 8px; color: var(--danger); font-size: 12px; text-align: center; }
-  ::-webkit-scrollbar { width: 8px; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; }
-</style>
+<link rel="stylesheet" href="/vendor/github-dark.min.css" />
+<link rel="stylesheet" href="/app.css" />
 </head>
 <body>
   <!-- Gate: shown until a valid key is connected -->
   <section id="gate">
     <span class="wordmark">SEER</span>
-    <span class="label">Mantic Think</span>
+    <span class="gate-label">Mantic Think</span>
     <div class="card">
       <input id="keyInput" type="password" placeholder="Paste your Ollama API key" autocomplete="off" spellcheck="false" />
       <div class="gate-err" id="gateErr"></div>
@@ -167,220 +24,52 @@
     </div>
   </section>
 
-  <!-- App: chat, shown after connect -->
-  <header id="appHeader" class="hidden">
-    <div class="brand">
-      <span class="wordmark">SEER</span>
-      <span class="tagline">Mantic Think</span>
-    </div>
-    <span class="spacer"></span>
-    <select id="model" title="Model"></select>
-    <button class="ghost" id="clear" title="New conversation">New</button>
-    <button class="ghost" id="disconnect" title="Remove key">Sign out</button>
-  </header>
+  <!-- App shell: sidebar + chat pane -->
+  <div id="app" class="hidden">
+    <div id="scrim"></div>
 
-  <main id="main" class="hidden">
-    <div class="thread" id="thread">
-      <div class="empty" id="empty">
+    <aside id="sidebar">
+      <div class="side-head">
         <span class="wordmark">SEER</span>
-        <p>Ask anything. Responses stream from Ollama.</p>
+        <button id="newChat" class="side-new" title="New conversation">
+          <span class="plus">+</span> New chat
+        </button>
       </div>
+      <div id="convList" class="conv-list"></div>
+      <div class="side-foot">
+        <button class="ghost" id="disconnect" title="Remove key">Sign out</button>
+      </div>
+    </aside>
+
+    <div id="chatPane">
+      <header>
+        <button id="menuBtn" class="icon-btn drawer-only" title="Conversations" aria-label="Conversations">☰</button>
+        <div class="brand">
+          <span class="wordmark">SEER</span>
+          <span class="tagline" id="headerTitle">Mantic Think</span>
+        </div>
+        <span class="spacer"></span>
+        <select id="model" title="Model"></select>
+      </header>
+
+      <main id="main">
+        <div class="thread" id="thread"></div>
+        <button id="scrollBtn" class="scroll-btn hidden" title="Scroll to latest" aria-label="Scroll to latest">↓</button>
+      </main>
+
+      <footer>
+        <div class="err" id="err" style="display:none"></div>
+        <div class="composer">
+          <textarea id="input" rows="1" placeholder="Message SEER…"></textarea>
+          <button id="send" title="Send" aria-label="Send">↑</button>
+        </div>
+      </footer>
     </div>
-  </main>
+  </div>
 
-  <footer id="appFooter" class="hidden">
-    <div class="err" id="err" style="display:none"></div>
-    <div class="composer">
-      <textarea id="input" rows="1" placeholder="Message SEER…"></textarea>
-      <button id="send" title="Send">↑</button>
-    </div>
-  </footer>
-
-<script>
-const KEY_STORE = "mt_ollama_key";
-const els = {
-  gate: document.getElementById('gate'),
-  keyInput: document.getElementById('keyInput'),
-  gateErr: document.getElementById('gateErr'),
-  connect: document.getElementById('connect'),
-  header: document.getElementById('appHeader'),
-  main: document.getElementById('main'),
-  footer: document.getElementById('appFooter'),
-  thread: document.getElementById('thread'),
-  empty: document.getElementById('empty'),
-  input: document.getElementById('input'),
-  send: document.getElementById('send'),
-  model: document.getElementById('model'),
-  clear: document.getElementById('clear'),
-  disconnect: document.getElementById('disconnect'),
-  err: document.getElementById('err'),
-};
-
-let apiKey = localStorage.getItem(KEY_STORE) || "";
-let messages = [];
-let streaming = false;
-
-function authHeader() { return { authorization: "Bearer " + apiKey }; }
-
-function showApp(show) {
-  els.gate.classList.toggle('hidden', show);
-  els.header.classList.toggle('hidden', !show);
-  els.main.classList.toggle('hidden', !show);
-  els.footer.classList.toggle('hidden', !show);
-  if (show) { els.input.focus(); } else { els.keyInput.focus(); }
-}
-
-async function loadModels() {
-  try {
-    const r = await fetch('/api/models');
-    const data = await r.json();
-    const list = (data.models && data.models.length) ? data.models : ['default'];
-    els.model.innerHTML = list.map(m => `<option value="${m}">${m}</option>`).join('');
-  } catch {
-    els.model.innerHTML = '<option value="default">default</option>';
-  }
-}
-
-async function validateKey(key) {
-  const r = await fetch('/api/validate', { method: 'POST', headers: { authorization: "Bearer " + key } });
-  const data = await r.json().catch(() => ({ ok: false }));
-  return data;
-}
-
-async function connect() {
-  const key = els.keyInput.value.trim();
-  els.gateErr.textContent = "";
-  if (!key) { els.gateErr.textContent = "Enter your Ollama API key."; return; }
-  els.connect.disabled = true;
-  els.connect.textContent = "Connecting…";
-  try {
-    const res = await validateKey(key);
-    if (res.ok) {
-      apiKey = key;
-      localStorage.setItem(KEY_STORE, key);
-      await loadModels();
-      showApp(true);
-    } else {
-      els.gateErr.textContent = res.error || "That key was rejected.";
-    }
-  } catch {
-    els.gateErr.textContent = "Network error. Try again.";
-  } finally {
-    els.connect.disabled = false;
-    els.connect.textContent = "Connect";
-  }
-}
-
-function disconnect() {
-  apiKey = "";
-  localStorage.removeItem(KEY_STORE);
-  messages = [];
-  resetThread();
-  els.keyInput.value = "";
-  showApp(false);
-}
-
-function autosize() { els.input.style.height = 'auto'; els.input.style.height = Math.min(els.input.scrollHeight, 160) + 'px'; }
-function scrollDown() { els.main.scrollTop = els.main.scrollHeight; }
-
-function resetThread() {
-  els.thread.innerHTML = '<div class="empty" id="empty"><span class="wordmark">SEER</span><p>Ask anything. Responses stream from Ollama.</p></div>';
-  els.empty = document.getElementById('empty');
-  showErr('');
-}
-
-function addBubble(role, text) {
-  if (els.empty) { els.empty.remove(); els.empty = null; }
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ' + role;
-  const col = document.createElement('div');
-  col.className = 'col';
-  const label = document.createElement('div');
-  label.className = 'role';
-  label.textContent = role === 'user' ? 'You' : 'SEER';
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.textContent = text;
-  col.appendChild(label); col.appendChild(bubble);
-  wrap.appendChild(col);
-  els.thread.appendChild(wrap);
-  scrollDown();
-  return { wrap, bubble };
-}
-
-function showErr(msg) { els.err.textContent = msg; els.err.style.display = msg ? 'block' : 'none'; }
-
-async function send() {
-  const text = els.input.value.trim();
-  if (!text || streaming) return;
-  showErr('');
-  els.input.value = ''; autosize();
-
-  messages.push({ role: 'user', content: text });
-  addBubble('user', text);
-
-  const { wrap, bubble } = addBubble('assistant', '');
-  bubble.classList.add('cursor');
-  streaming = true; els.send.disabled = true;
-
-  let acc = '';
-  try {
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ model: els.model.value, messages }),
-    });
-    if (resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
-    if (!resp.ok || !resp.body) {
-      const detail = await resp.text().catch(() => '');
-      throw new Error('Request failed (' + resp.status + ') ' + detail.slice(0, 200));
-    }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        const t = line.trim(); if (!t) continue;
-        try {
-          const obj = JSON.parse(t);
-          const piece = obj.message && obj.message.content ? obj.message.content : '';
-          if (piece) { acc += piece; bubble.textContent = acc; scrollDown(); }
-          if (obj.error) throw new Error(obj.error);
-        } catch (e) {}
-      }
-    }
-    if (!acc) throw new Error('Empty response from model.');
-    messages.push({ role: 'assistant', content: acc });
-  } catch (e) {
-    showErr(e.message || 'Something went wrong.');
-    if (!acc && wrap.parentElement) wrap.remove();
-  } finally {
-    bubble.classList.remove('cursor');
-    streaming = false; els.send.disabled = false; els.input.focus();
-  }
-}
-
-els.connect.addEventListener('click', connect);
-els.keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
-els.disconnect.addEventListener('click', disconnect);
-els.send.addEventListener('click', send);
-els.input.addEventListener('input', autosize);
-els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
-els.clear.addEventListener('click', () => { messages = []; resetThread(); els.input.focus(); });
-
-// Boot: if we already have a stored key, verify it; otherwise show the gate.
-(async function boot() {
-  if (apiKey) {
-    const res = await validateKey(apiKey).catch(() => ({ ok: false }));
-    if (res.ok) { await loadModels(); showApp(true); return; }
-    localStorage.removeItem(KEY_STORE); apiKey = "";
-  }
-  showApp(false);
-})();
-</script>
+  <script src="/vendor/marked.umd.js"></script>
+  <script src="/vendor/purify.min.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script src="/app.js" defer></script>
 </body>
 </html>
