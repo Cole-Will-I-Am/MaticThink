@@ -50,8 +50,11 @@
         </div>
         <span class="spacer"></span>
         <select id="model" title="Model"></select>
+        <button id="scaffoldBtn" class="icon-btn" title="Reasoning scaffolds" aria-label="Scaffolds">⌗</button>
         <button id="settingsBtn" class="icon-btn" title="Generation settings" aria-label="Settings">⚙</button>
       </header>
+
+      <div id="scaffoldBar" class="scaffold-bar hidden"></div>
 
       <main id="main">
         <div class="thread" id="thread"></div>
@@ -130,6 +133,94 @@
         <div class="sp-foot set-foot">
           <button id="setReset" class="sp-link" type="button">Reset to defaults</button>
           <button id="manageModelsBtn" class="sp-link" type="button">Manage models →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reasoning scaffold library -->
+  <div id="scaffoldModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Reasoning scaffolds</span>
+        <button id="scClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div class="mm-section">
+          <div class="mm-add">
+            <input id="scSearch" class="mm-search" placeholder="Search your scaffolds…" autocomplete="off" />
+            <button id="scNew" class="mm-add-btn" type="button">+ New</button>
+          </div>
+        </div>
+        <div class="mm-section">
+          <div class="mm-label">Your scaffolds</div>
+          <div id="scList" class="sc-list"></div>
+        </div>
+        <div class="mm-section">
+          <div class="mm-label">Start from a template</div>
+          <div id="scTemplates" class="sc-templates"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reasoning scaffold builder -->
+  <div id="scaffoldBuilder" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="sbTitle">New scaffold</span>
+        <button id="sbClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div id="sbErrors" class="sb-errors hidden"></div>
+        <div class="set-section">
+          <div class="mm-label">Basics</div>
+          <label class="set-field set-field-wide">Name
+            <input id="sbName" type="text" maxlength="80" placeholder="Support Analyst" autocomplete="off" />
+          </label>
+          <label class="set-field set-field-wide">Summary
+            <input id="sbSummary" type="text" maxlength="240" placeholder="What this scaffold is for" autocomplete="off" />
+          </label>
+          <label class="set-field set-field-wide">Role
+            <input id="sbRole" type="text" maxlength="120" placeholder="Role the model should play" autocomplete="off" />
+          </label>
+          <label class="set-field set-field-wide">Perspective
+            <textarea id="sbPerspective" class="set-textarea sb-area" maxlength="300" placeholder="How the model should think"></textarea>
+          </label>
+          <label class="set-field set-field-wide">Tone
+            <input id="sbTone" type="text" maxlength="120" placeholder="Direct, calm, encouraging" autocomplete="off" />
+          </label>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Reasoning steps</div>
+          <textarea id="sbSteps" class="set-textarea" placeholder="One step per line. Minimum one.&#10;1) Identify the objective&#10;2) Analyze constraints&#10;3) Recommend the next step"></textarea>
+          <div class="sp-hint">One step per line · up to 12 · 220 characters each.</div>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Output guidance <span class="sc-opt">optional</span></div>
+          <label class="set-field set-field-wide">Helpful elements to cover
+            <textarea id="sbMust" class="set-textarea sb-area" placeholder="One per line"></textarea>
+          </label>
+          <label class="set-field set-field-wide">Avoid by default
+            <textarea id="sbNever" class="set-textarea sb-area" placeholder="One per line"></textarea>
+          </label>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Safety hints <span class="sc-opt">optional</span></div>
+          <label class="set-field set-field-wide">Disclaimers
+            <textarea id="sbDisc" class="set-textarea sb-area" placeholder="One per line"></textarea>
+          </label>
+          <label class="set-field set-field-wide">Prohibited actions
+            <textarea id="sbProh" class="set-textarea sb-area" placeholder="One per line"></textarea>
+          </label>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Compiled preview</div>
+          <pre id="sbPreview" class="sb-preview"></pre>
+        </div>
+        <div class="sp-foot set-foot">
+          <button id="sbSave" class="mm-add-btn" type="button">Save scaffold</button>
+          <button id="sbCancel" class="sp-link" type="button">Cancel</button>
         </div>
       </div>
     </div>
