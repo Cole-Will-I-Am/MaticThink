@@ -7,11 +7,13 @@
 <meta name="description" content="SEER — a quiet interface for thinking with Ollama models. Bring your own key." />
 <link rel="stylesheet" href="/vendor/github-dark.min.css" />
 <link rel="stylesheet" href="/app.css" />
+<link rel="icon" type="image/png" href="/seer-emblem.png" />
+<link rel="apple-touch-icon" href="/seer-emblem.png" />
 </head>
 <body>
   <!-- Gate: shown until a valid key is connected -->
   <section id="gate">
-    <span class="wordmark">SEER</span>
+    <img class="wordmark" src="/seer-wordmark.svg" alt="SEER" />
     <span class="gate-label">Mantic Think</span>
     <div class="card">
       <input id="keyInput" type="password" placeholder="Paste your Ollama API key" autocomplete="off" spellcheck="false" />
@@ -30,7 +32,7 @@
 
     <aside id="sidebar">
       <div class="side-head">
-        <span class="wordmark">SEER</span>
+        <img class="wordmark" src="/seer-wordmark.svg" alt="SEER" />
         <button id="newChat" class="side-new" title="New conversation">
           <span class="plus">+</span> New chat
         </button>
@@ -45,7 +47,7 @@
       <header>
         <button id="menuBtn" class="icon-btn drawer-only" title="Conversations" aria-label="Conversations">☰</button>
         <div class="brand">
-          <span class="wordmark">SEER</span>
+          <img class="wordmark" src="/seer-wordmark.svg" alt="SEER" />
           <span class="tagline" id="headerTitle">Mantic Think</span>
         </div>
         <span class="spacer"></span>

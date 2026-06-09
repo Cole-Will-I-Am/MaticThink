@@ -655,7 +655,7 @@ function updateHeaderTitle() { els.headerTitle.textContent = (current && current
 
 function renderEmpty() {
   const e = document.createElement('div'); e.className = 'empty';
-  e.innerHTML = '<span class="wordmark">SEER</span><p>Ask anything. Responses stream from Ollama.</p>';
+  e.innerHTML = '<img class="wordmark" src="/seer-wordmark.svg" alt="SEER" /><p>Ask anything. Responses stream from Ollama.</p>';
   const chips = document.createElement('div'); chips.className = 'chips';
   SUGGESTIONS.forEach((s) => {
     const c = document.createElement('button'); c.className = 'chip'; c.type = 'button'; c.textContent = s;

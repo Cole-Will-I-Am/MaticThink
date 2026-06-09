@@ -34,11 +34,8 @@ body::before {
   background: radial-gradient(circle, rgba(97,121,255,0.10), rgba(140,97,242,0.05) 40%, transparent 70%);
   filter: blur(40px); pointer-events: none; z-index: 0;
 }
-.wordmark {
-  font-weight: 300; letter-spacing: 0.42em; text-indent: 0.42em;
-  background: linear-gradient(120deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
+/* SEER logotype — the app's brandmark, traced to a gradient SVG */
+.wordmark { display: inline-block; width: auto; vertical-align: middle; user-select: none; }
 .hidden { display: none !important; }
 :focus-visible { outline: 2px solid rgba(97,121,255,0.55); outline-offset: 2px; border-radius: 6px; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
@@ -51,7 +48,7 @@ body::before {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 24px; padding-top: calc(24px + env(safe-area-inset-top));
 }
-#gate .wordmark { font-size: 30px; }
+#gate .wordmark { height: 30px; }
 .gate-label { margin-top: 18px; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-secondary); }
 .card {
   margin-top: 30px; width: 100%; max-width: 380px;
@@ -91,7 +88,7 @@ body.drawer-open #scrim { opacity: 1; pointer-events: auto; }
   padding-top: env(safe-area-inset-top);
 }
 .side-head { padding: 18px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
-.side-head .wordmark { font-size: 16px; }
+.side-head .wordmark { height: 15px; }
 .side-new {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   background: var(--accent-soft); color: var(--accent); border: 0.5px solid rgba(97,121,255,0.2);
@@ -137,7 +134,7 @@ header {
   border-bottom: 0.5px solid var(--border);
 }
 header .brand { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-header .wordmark { font-size: 16px; }
+header .wordmark { height: 15px; }
 .tagline { font-size: 9px; letter-spacing: 0.30em; color: var(--text-tertiary); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spacer { flex: 1; }
 .icon-btn {
@@ -306,7 +303,7 @@ main {
 
 /* empty state */
 .empty { margin: auto; text-align: center; color: var(--text-tertiary); display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 48px 16px; }
-.empty .wordmark { font-size: 24px; }
+.empty .wordmark { height: 26px; }
 .empty p { font-size: 13px; font-weight: 300; margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 520px; margin-top: 6px; }
 .chip {
