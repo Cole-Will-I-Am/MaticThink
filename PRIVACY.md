@@ -103,6 +103,4 @@ this URL with a revised "Last updated" date.
 
 ## Contact
 
-For privacy questions or requests, contact us via:
-
-- https://github.com/Cole-Will-I-Am/Ollama-Cloud-App/issues
+For privacy questions or requests, contact us at licensing@manticthink.com.
