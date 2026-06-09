@@ -10,11 +10,9 @@ binding = "ASSETS"
 
 # Aggregate, privacy-preserving event counters (no keys, no message content).
 # Tracks the connect funnel: key-validation attempts/outcomes and chats sent.
-# NOTE: enable Analytics Engine once in the dashboard, then uncomment to activate:
-#   https://dash.cloudflare.com/<account>/workers/analytics-engine
-# [[analytics_engine_datasets]]
-# binding = "AE"
-# dataset = "manticthink_events"
+[[analytics_engine_datasets]]
+binding = "AE"
+dataset = "manticthink_events"
 
 # Non-secret config (edit freely, then redeploy). The model list shows in the
 # picker; set these to the Ollama models you actually have access to.
