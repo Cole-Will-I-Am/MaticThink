@@ -760,8 +760,10 @@ self.onmessage=async function(e){
   postMessage({type:'done'});
 };`;
 const PY_WORKER_SRC = `
-let ready=false;
+let ready=false, CTRL=null, DATA=null;
 self.onmessage=async function(e){
+  const code=e.data.code, sab=e.data.sab;
+  if(sab && !CTRL){ CTRL=new Int32Array(sab,0,2); DATA=new Uint8Array(sab,8); }
   try{
     if(!ready){
       postMessage({type:'status',text:'Loading Python runtime (first run)…'});
@@ -769,11 +771,19 @@ self.onmessage=async function(e){
       self.py=await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'});
       self.py.setStdout({batched:function(s){ postMessage({type:'out',level:'log',text:s}); }});
       self.py.setStderr({batched:function(s){ postMessage({type:'out',level:'error',text:s}); }});
-      self.py.setStdin({stdin:function(){ postMessage({type:'stdin'}); return null; }});
+      self.py.setStdin({stdin:function(){
+        if(!CTRL){ postMessage({type:'stdin'}); return null; }    // not cross-origin isolated → EOF + note
+        postMessage({type:'input-request'});
+        Atomics.store(CTRL,0,0);
+        Atomics.wait(CTRL,0,0);                                   // block until the page provides a line
+        if(Atomics.load(CTRL,0)===2) return null;                // cancelled → EOF
+        const len=Atomics.load(CTRL,1);
+        return new TextDecoder().decode(DATA.slice(0,len));
+      }});
       ready=true;
     }
     postMessage({type:'ready'});
-    const r= await self.py.runPythonAsync(e.data);
+    const r= await self.py.runPythonAsync(code);
     if(r!==undefined && r!==null) postMessage({type:'out',level:'result',text:String(r)});
   }catch(err){ postMessage({type:'out',level:'error',text:(err&&err.message)||String(err)}); }
   postMessage({type:'done'});
@@ -793,14 +803,35 @@ function runJs(code, onMsg, onDone) {
 }
 
 let pyWorker = null;
+const PY_EXEC_MS = 30000, PY_LOAD_MS = 60000;
 function runPy(code, onMsg, onDone) {
   if (!pyWorker) {
     const w = new Worker(URL.createObjectURL(new Blob([PY_WORKER_SRC], { type: 'application/javascript' })));
     w._h = null;
+    // Interactive stdin needs a SharedArrayBuffer, which needs cross-origin isolation.
+    w._sab = (self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined') ? new SharedArrayBuffer(65536) : null;
+    w._ctrl = w._sab ? new Int32Array(w._sab, 0, 2) : null;
+    w._data = w._sab ? new Uint8Array(w._sab, 8) : null;
+    const arm = (h, ms) => { if (h.timer) clearTimeout(h.timer); h.timer = setTimeout(() => { w.terminate(); if (pyWorker === w) pyWorker = null; w._h = null; h.onDone(true); }, ms); };
     w.onmessage = (e) => {
       const h = w._h; if (!h) return; const d = e.data;
-      if (d.type === 'ready') { if (h.timer) clearTimeout(h.timer); h.timer = setTimeout(() => { w.terminate(); if (pyWorker === w) pyWorker = null; w._h = null; h.onDone(true); }, 30000); }
+      if (d.type === 'ready') { arm(h, PY_EXEC_MS); }
       else if (d.type === 'done') { if (h.timer) clearTimeout(h.timer); w._h = null; h.onDone(false); }
+      else if (d.type === 'input-request') {
+        if (h.timer) { clearTimeout(h.timer); h.timer = null; }   // pause timeout while the user types
+        h.onMsg({
+          type: 'input-request',
+          submit: (text) => {
+            const enc = new TextEncoder().encode((text || '') + '\n');
+            const n = Math.min(enc.length, w._data.length);
+            w._data.set(enc.subarray(0, n));
+            Atomics.store(w._ctrl, 1, n);
+            Atomics.store(w._ctrl, 0, 1);
+            Atomics.notify(w._ctrl, 0, 1);
+            arm(h, PY_EXEC_MS);
+          },
+        });
+      }
       else h.onMsg(d);
     };
     w.onerror = (ev) => { const h = w._h; if (h) { if (h.timer) clearTimeout(h.timer); h.onMsg({ type: 'out', level: 'error', text: ev.message || 'Python worker error' }); w._h = null; h.onDone(false); } w.terminate(); if (pyWorker === w) pyWorker = null; };
@@ -808,8 +839,8 @@ function runPy(code, onMsg, onDone) {
   }
   const w = pyWorker;
   if (w._h) { onMsg({ type: 'out', level: 'error', text: 'Python is busy — wait for the current run to finish.' }); onDone(false); return; }
-  w._h = { onMsg, onDone, timer: setTimeout(() => { w.terminate(); if (pyWorker === w) pyWorker = null; w._h = null; onDone(true); }, 60000) };
-  w.postMessage(code);
+  w._h = { onMsg, onDone, timer: setTimeout(() => { w.terminate(); if (pyWorker === w) pyWorker = null; w._h = null; onDone(true); }, PY_LOAD_MS) };
+  w.postMessage({ code, sab: w._sab });
 }
 
 // Clean common copy-paste / model artifacts that break parsers: BOM, a leading
@@ -844,6 +875,19 @@ function runCodeBlock(pre, code, lang, runBtn) {
   const onMsg = (m) => {
     if (m.type === 'status') { status.textContent = m.text; return; }
     if (m.type === 'stdin') { neededInput = true; return; }
+    if (m.type === 'input-request') {
+      status.textContent = 'waiting for input…';
+      const row = document.createElement('div'); row.className = 'ro-input';
+      const inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = 'stdin — type and press Enter';
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter') return;
+        ev.preventDefault();
+        const v = inp.value; row.remove(); addLine('ro-stdin', '› ' + v); any = true;
+        status.textContent = 'running…'; m.submit(v); maybeScroll();
+      });
+      row.appendChild(inp); body.appendChild(row); inp.focus(); maybeScroll();
+      return;
+    }
     if (m.type === 'out') { any = true; addLine('ro-' + (m.level || 'log'), m.text); maybeScroll(); }
   };
   const onDone = (timedOut) => {

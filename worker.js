@@ -12,10 +12,17 @@
 
 const FALLBACK_MODELS = "gpt-oss:120b-cloud,qwen3-coder:480b-cloud,deepseek-v3.1:671b-cloud";
 
+// Cross-origin isolation — required so the page can use SharedArrayBuffer /
+// Atomics (used for interactive stdin in the sandboxed Python runner).
+const COI_HEADERS = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...COI_HEADERS },
   });
 }
 
@@ -145,7 +152,7 @@ async function handleChat(request, env) {
   }
 
   return new Response(upstream.body, {
-    headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", ...COI_HEADERS },
   });
 }
 
@@ -162,6 +169,10 @@ export default {
       if (request.method !== "POST") return json({ error: "Use POST." }, 405);
       return handleChat(request, env);
     }
-    return env.ASSETS.fetch(request);
+    const assetRes = await env.ASSETS.fetch(request);
+    const h = new Headers(assetRes.headers);
+    h.set("Cross-Origin-Opener-Policy", "same-origin");
+    h.set("Cross-Origin-Embedder-Policy", "require-corp");
+    return new Response(assetRes.body, { status: assetRes.status, statusText: assetRes.statusText, headers: h });
   },
 };

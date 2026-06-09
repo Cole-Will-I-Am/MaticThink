@@ -429,6 +429,9 @@ main {
 .ro-warn { color: #ffb454; }
 .ro-result { color: var(--accent); }
 .ro-muted { color: var(--text-tertiary); }
+.ro-stdin { color: var(--accent); }
+.ro-input { padding: 3px 0; }
+.ro-input input { width: 100%; background: var(--surface); color: var(--text-primary); border: 0.5px solid rgba(97,121,255,0.45); border-radius: 7px; padding: 6px 9px; font-family: var(--mono); font-size: 12px; outline: none; }
 
 /* thinking block */
 details.thinking {
