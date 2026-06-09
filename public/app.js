@@ -738,22 +738,133 @@ function renderVisuals(bubble) {
   });
 }
 
+/* ---------- Code execution (sandboxed) ---------- */
+// JS runs in a throwaway Web Worker (no DOM, no localStorage → no access to the
+// user's keys); Python runs via Pyodide (CPython/WASM) in a persistent worker,
+// loaded from the CDN on first run. Both capture stdout and enforce a timeout.
+const JS_WORKER_SRC = `
+'use strict';
+function fmt(a){ if(typeof a==='string') return a; try{ return JSON.stringify(a); }catch(e){ return String(a); } }
+function send(level,args){ postMessage({type:'out',level:level,text:Array.prototype.map.call(args,fmt).join(' ')}); }
+console.log=function(){ send('log',arguments); };
+console.info=function(){ send('log',arguments); };
+console.warn=function(){ send('warn',arguments); };
+console.error=function(){ send('error',arguments); };
+self.onmessage=async function(e){
+  postMessage({type:'ready'});
+  try{
+    const r= await eval('(async()=>{'+e.data+'\\n})()');
+    if(r!==undefined) send('result',[r]);
+  }catch(err){ send('error',[ (err&&err.stack)||String(err) ]); }
+  postMessage({type:'done'});
+};`;
+const PY_WORKER_SRC = `
+let ready=false;
+self.onmessage=async function(e){
+  try{
+    if(!ready){
+      postMessage({type:'status',text:'Loading Python runtime (first run)…'});
+      importScripts('https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js');
+      self.py=await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'});
+      self.py.setStdout({batched:function(s){ postMessage({type:'out',level:'log',text:s}); }});
+      self.py.setStderr({batched:function(s){ postMessage({type:'out',level:'error',text:s}); }});
+      ready=true;
+    }
+    postMessage({type:'ready'});
+    const r= await self.py.runPythonAsync(e.data);
+    if(r!==undefined && r!==null) postMessage({type:'out',level:'result',text:String(r)});
+  }catch(err){ postMessage({type:'out',level:'error',text:(err&&err.message)||String(err)}); }
+  postMessage({type:'done'});
+};`;
+
+function runJs(code, onMsg, onDone) {
+  const w = new Worker(URL.createObjectURL(new Blob([JS_WORKER_SRC], { type: 'application/javascript' })));
+  let timer = null;
+  w.onmessage = (e) => {
+    const d = e.data;
+    if (d.type === 'ready') { timer = setTimeout(() => { w.terminate(); onDone(true); }, 10000); }
+    else if (d.type === 'done') { if (timer) clearTimeout(timer); w.terminate(); onDone(false); }
+    else onMsg(d);
+  };
+  w.onerror = (ev) => { if (timer) clearTimeout(timer); onMsg({ type: 'out', level: 'error', text: ev.message || 'Worker error' }); w.terminate(); onDone(false); };
+  w.postMessage(code);
+}
+
+let pyWorker = null;
+function runPy(code, onMsg, onDone) {
+  if (!pyWorker) {
+    const w = new Worker(URL.createObjectURL(new Blob([PY_WORKER_SRC], { type: 'application/javascript' })));
+    w._h = null;
+    w.onmessage = (e) => {
+      const h = w._h; if (!h) return; const d = e.data;
+      if (d.type === 'ready') { if (h.timer) clearTimeout(h.timer); h.timer = setTimeout(() => { w.terminate(); if (pyWorker === w) pyWorker = null; w._h = null; h.onDone(true); }, 30000); }
+      else if (d.type === 'done') { if (h.timer) clearTimeout(h.timer); w._h = null; h.onDone(false); }
+      else h.onMsg(d);
+    };
+    w.onerror = (ev) => { const h = w._h; if (h) { if (h.timer) clearTimeout(h.timer); h.onMsg({ type: 'out', level: 'error', text: ev.message || 'Python worker error' }); w._h = null; h.onDone(false); } w.terminate(); if (pyWorker === w) pyWorker = null; };
+    pyWorker = w;
+  }
+  const w = pyWorker;
+  if (w._h) { onMsg({ type: 'out', level: 'error', text: 'Python is busy — wait for the current run to finish.' }); onDone(false); return; }
+  w._h = { onMsg, onDone, timer: setTimeout(() => { w.terminate(); if (pyWorker === w) pyWorker = null; w._h = null; onDone(true); }, 60000) };
+  w.postMessage(code);
+}
+
+function ensureRunPanel(pre) {
+  let p = pre.nextElementSibling;
+  if (!p || !p.classList.contains('run-output')) { p = document.createElement('div'); p.className = 'run-output'; pre.after(p); }
+  return p;
+}
+function runCodeBlock(pre, code, lang, runBtn) {
+  const isPy = lang === 'python';
+  const panel = ensureRunPanel(pre); panel.innerHTML = '';
+  const head = document.createElement('div'); head.className = 'ro-head';
+  const label = document.createElement('span'); label.textContent = (isPy ? 'Python' : 'JavaScript') + ' output';
+  const status = document.createElement('span'); status.className = 'ro-status'; status.textContent = 'running…';
+  head.append(label, status);
+  const body = document.createElement('div'); body.className = 'ro-body';
+  panel.append(head, body);
+  if (runBtn) { runBtn.disabled = true; runBtn.textContent = '▶ Running'; }
+  let any = false;
+  const onMsg = (m) => {
+    if (m.type === 'status') { status.textContent = m.text; return; }
+    if (m.type === 'out') { any = true; const line = document.createElement('div'); line.className = 'ro-line ro-' + (m.level || 'log'); line.textContent = m.text; body.appendChild(line); maybeScroll(); }
+  };
+  const onDone = (timedOut) => {
+    status.textContent = timedOut ? 'stopped (timeout)' : 'done';
+    if (!any && !timedOut) { const d = document.createElement('div'); d.className = 'ro-line ro-muted'; d.textContent = '(no output)'; body.appendChild(d); }
+    if (runBtn) { runBtn.disabled = false; runBtn.textContent = '▶ Run'; }
+    maybeScroll();
+  };
+  if (isPy) runPy(code, onMsg, onDone); else runJs(code, onMsg, onDone);
+}
+
 function renderAssistantHTML(bubble, text) {
   bubble.classList.remove('plain');
   bubble.innerHTML = renderMarkdown(text);
   renderVisuals(bubble);
   bubble.querySelectorAll('pre code').forEach((el) => { try { window.hljs && hljs.highlightElement(el); } catch (e) {} });
   bubble.querySelectorAll('pre').forEach((pre) => {
-    if (pre.querySelector('.copy-btn')) return;
-    const btn = document.createElement('button');
-    btn.className = 'copy-btn'; btn.type = 'button'; btn.textContent = 'Copy';
-    btn.addEventListener('click', () => {
-      const code = pre.querySelector('code');
-      navigator.clipboard.writeText(code ? code.innerText : pre.innerText);
-      btn.textContent = 'Copied'; btn.classList.add('ok');
-      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1200);
+    if (pre.querySelector('.code-actions')) return;
+    const codeEl = pre.querySelector('code');
+    const m = (codeEl && codeEl.className || '').match(/language-([\w+#.-]+)/);
+    const lang = m ? m[1].toLowerCase() : '';
+    const isPy = ['py', 'python', 'python3'].includes(lang);
+    const isJs = ['js', 'javascript', 'mjs', 'node'].includes(lang);
+    const actions = document.createElement('div'); actions.className = 'code-actions';
+    if (isPy || isJs) {
+      const run = document.createElement('button'); run.className = 'run-btn'; run.type = 'button'; run.textContent = '▶ Run';
+      run.addEventListener('click', () => runCodeBlock(pre, (codeEl ? codeEl.innerText : pre.innerText), isPy ? 'python' : 'javascript', run));
+      actions.appendChild(run);
+    }
+    const copy = document.createElement('button'); copy.className = 'copy-btn'; copy.type = 'button'; copy.textContent = 'Copy';
+    copy.addEventListener('click', () => {
+      navigator.clipboard.writeText(codeEl ? codeEl.innerText : pre.innerText);
+      copy.textContent = 'Copied'; copy.classList.add('ok');
+      setTimeout(() => { copy.textContent = 'Copy'; copy.classList.remove('ok'); }, 1200);
     });
-    pre.appendChild(btn);
+    actions.appendChild(copy);
+    pre.appendChild(actions);
   });
 }
 
