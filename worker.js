@@ -26,6 +26,16 @@ function json(data, status = 200) {
   });
 }
 
+// Aggregate event counter (Analytics Engine). Records only an event name, a
+// coarse outcome, and the model — never the API key or any message content.
+function track(env, event, outcome, model) {
+  try {
+    if (env.AE && typeof env.AE.writeDataPoint === "function") {
+      env.AE.writeDataPoint({ indexes: [event], blobs: [event, outcome || "", model || ""], doubles: [1] });
+    }
+  } catch (e) { /* never let telemetry affect the request */ }
+}
+
 function modelList(env) {
   return (env.CHAT_MODELS || FALLBACK_MODELS)
     .split(",").map((m) => m.trim()).filter(Boolean);
@@ -78,18 +88,21 @@ function upstreamBase(env) {
 // which is unauthenticated on Ollama Cloud).
 async function handleValidate(request, env) {
   const auth = bearer(request);
-  if (!auth) return json({ ok: false, error: "Enter your Ollama API key." }, 200);
+  if (!auth) { track(env, "validate", "missing"); return json({ ok: false, error: "Enter your Ollama API key." }, 200); }
   try {
     const r = await fetch(upstreamBase(env) + "/api/me", {
       method: "POST",
       headers: { authorization: auth },
     });
-    if (r.ok) return json({ ok: true }, 200);
+    if (r.ok) { track(env, "validate", "ok"); return json({ ok: true }, 200); }
     if (r.status === 401 || r.status === 403) {
+      track(env, "validate", "rejected");
       return json({ ok: false, error: "That key was rejected." }, 200);
     }
+    track(env, "validate", "error");
     return json({ ok: false, error: `Could not verify key (${r.status}).` }, 200);
   } catch {
+    track(env, "validate", "unreachable");
     return json({ ok: false, error: "Could not reach the model backend." }, 200);
   }
 }
@@ -131,6 +144,7 @@ async function handleChat(request, env) {
   const requested = typeof body.model === "string" ? body.model.trim() : "";
   const model = requested || env.DEFAULT_MODEL || modelList(env)[0];
   const options = sanitizeOptions(body.options);
+  track(env, "chat", "sent", model);
 
   let upstream;
   try {
