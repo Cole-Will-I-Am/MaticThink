@@ -166,6 +166,12 @@
           <label class="set-check"><input id="visualsToggle" type="checkbox" /> <span>Let models draw charts &amp; diagrams</span></label>
           <div class="sp-hint">Adds a hint so models can emit <code>mermaid</code> diagrams and <code>chart</code> blocks, rendered inline. Markdown tables always render.</div>
         </div>
+        <div class="set-section">
+          <div class="mm-label">Tools <span class="sc-opt">function calling</span></div>
+          <label class="set-check"><input id="toolsToggle" type="checkbox" /> <span>Let the model call tools</span></label>
+          <div id="toolList" class="tool-list"></div>
+          <div class="sp-hint">Only tool-capable models (e.g. gpt-oss, qwen3-coder) use these. The model can run code, do math, and fetch URLs in a sandbox; results are returned to it automatically.</div>
+        </div>
         <div class="sp-foot set-foot">
           <button id="setReset" class="sp-link" type="button">Reset to defaults</button>
           <button id="manageModelsBtn" class="sp-link" type="button">Manage models →</button>

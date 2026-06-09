@@ -14,7 +14,7 @@ const els = {
   settingsBtn: $('settingsBtn'), settingsModal: $('settingsModal'), setClose: $('setClose'),
   paramSliders: $('paramSliders'), sysPrompt: $('sysPrompt'),
   pNumPredict: $('pNumPredict'), pSeed: $('pSeed'), pStop: $('pStop'), setReset: $('setReset'),
-  visualsToggle: $('visualsToggle'),
+  visualsToggle: $('visualsToggle'), toolsToggle: $('toolsToggle'), toolList: $('toolList'),
   manageModelsBtn: $('manageModelsBtn'), modelModal: $('modelModal'), mmClose: $('mmClose'),
   mmYours: $('mmYours'), mmInput: $('mmInput'), mmAdd: $('mmAdd'),
   mmSearch: $('mmSearch'), mmCatalog: $('mmCatalog'), mmCount: $('mmCount'),
@@ -123,6 +123,8 @@ function renderSettings() {
   const sd = effective('seed'); els.pSeed.value = (typeof sd === 'number') ? sd : '';
   const st = effective('stop'); els.pStop.value = (Array.isArray(st) && st.length) ? st.join(', ') : '';
   els.visualsToggle.checked = visualsOn();
+  els.toolsToggle.checked = toolsOn();
+  renderToolList();
 }
 function openSettings() { renderSettings(); els.settingsModal.classList.remove('hidden'); }
 function closeSettings() { els.settingsModal.classList.add('hidden'); }
@@ -1229,6 +1231,21 @@ function buildAssistantNode() {
     clearTyping() { if (typing.parentElement) typing.remove(); },
     setThinking(t) { ensureThink(); thinkBody.textContent = t; },
     collapseThinking() { if (thinkEl) thinkEl.open = false; },
+    addToolCall(name, argsText) {
+      const el = document.createElement('details'); el.className = 'toolcall';
+      const sum = document.createElement('summary');
+      sum.innerHTML = '🔧 <span class="tc-name"></span> <span class="tc-status">running…</span>';
+      sum.querySelector('.tc-name').textContent = name;
+      const body = document.createElement('div'); body.className = 'tc-body';
+      const ap = document.createElement('pre'); ap.className = 'tc-args'; ap.textContent = argsText;
+      const rp = document.createElement('pre'); rp.className = 'tc-result';
+      body.append(ap, rp); el.append(sum, body);
+      col.insertBefore(el, bubble); maybeScroll();
+      return {
+        setResult(text) { rp.textContent = text; sum.querySelector('.tc-status').textContent = 'done'; maybeScroll(); },
+        setError(text) { rp.textContent = text; rp.classList.add('tc-err'); sum.querySelector('.tc-status').textContent = 'error'; maybeScroll(); },
+      };
+    },
     setStats(s) {
       const div = document.createElement('div'); div.className = 'stats';
       const toks = s.eval_count; const secs = s.eval_duration ? s.eval_duration / 1e9 : 0;
@@ -1254,8 +1271,9 @@ function renderAssistantMessage(m) {
   const a = buildAssistantNode();
   a.clearTyping();
   if (m.thinking) { a.setThinking(m.thinking); a.collapseThinking(); }
+  if (m.toolRounds) for (const tr of m.toolRounds) { const ui = a.addToolCall(tr.name || 'tool', JSON.stringify(tr.args || {}, null, 2)); ui.setResult(String(tr.result == null ? '' : tr.result)); }
   if (m.content) { renderAssistantHTML(a.bubble, m.content); a.bubble.dataset.raw = m.content; }
-  else a.bubble.textContent = '…';
+  else a.bubble.textContent = m.toolRounds ? '' : '…';
   if (m.stats) a.setStats(m.stats);
   a.addActions();
 }
@@ -1297,6 +1315,90 @@ function renderSidebar() {
   }
 }
 
+/* ---------- Tools (function calling, sandboxed) ---------- */
+// Run code in the existing sandboxes and capture output as a string (for tools).
+function runJsCapture(code) {
+  return new Promise((res) => {
+    const lines = [];
+    runJs(normalizeRunCode(code || ''), (m) => { if (m.type === 'out') lines.push(m.text); }, (t) => { if (t) lines.push('[timed out]'); res(lines.join('\n') || '(no output)'); });
+  });
+}
+function runPyCapture(code) {
+  return new Promise((res) => {
+    const lines = [];
+    runPy(normalizeRunCode(code || ''), (m) => { if (m.type === 'out') lines.push(m.text); else if (m.type === 'input-request' && m.submit) m.submit(''); }, (t) => { if (t) lines.push('[timed out]'); res(lines.join('\n') || '(no output)'); });
+  });
+}
+async function fetchUrlTool(url) {
+  try {
+    const r = await fetch('/api/fetch?url=' + encodeURIComponent(url || ''), { headers: authHeader() });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) return 'Error: ' + (d.error || ('HTTP ' + r.status));
+    return d.text || '(empty)';
+  } catch (e) { return 'Error: ' + (e.message || e); }
+}
+
+const TOOL_DEFS = {
+  run_javascript: {
+    label: 'Run JavaScript', blurb: 'Execute JS in a sandbox',
+    schema: { type: 'function', function: { name: 'run_javascript', description: 'Execute JavaScript in a secure sandbox and return its console output. Use for calculations, data transforms, JSON/string work, and algorithms. Print results with console.log.', parameters: { type: 'object', properties: { code: { type: 'string', description: 'JavaScript source to run.' } }, required: ['code'] } } },
+    run: (a) => runJsCapture(a.code || ''),
+  },
+  run_python: {
+    label: 'Run Python', blurb: 'Execute Python (Pyodide)',
+    schema: { type: 'function', function: { name: 'run_python', description: 'Execute Python (CPython via Pyodide) in a sandbox and return stdout. Use for math, data, and algorithms. Print results with print().', parameters: { type: 'object', properties: { code: { type: 'string', description: 'Python source to run.' } }, required: ['code'] } } },
+    run: (a) => runPyCapture(a.code || ''),
+  },
+  calculator: {
+    label: 'Calculator', blurb: 'Evaluate a math expression',
+    schema: { type: 'function', function: { name: 'calculator', description: 'Evaluate a single arithmetic/JavaScript math expression and return the result.', parameters: { type: 'object', properties: { expression: { type: 'string', description: 'e.g. (1234*56)/7' } }, required: ['expression'] } } },
+    run: (a) => runJsCapture('console.log(' + (a.expression || '0') + ')'),
+  },
+  fetch_url: {
+    label: 'Fetch URL', blurb: 'Read a public web page / API',
+    schema: { type: 'function', function: { name: 'fetch_url', description: 'Fetch the text content of a public http(s) URL and return it (truncated to ~8000 chars). Use to read a web page or API response.', parameters: { type: 'object', properties: { url: { type: 'string', description: 'A public http(s) URL.' } }, required: ['url'] } } },
+    run: (a) => fetchUrlTool(a.url || ''),
+  },
+};
+
+const TOOLS_KEY = 'mt_tools';
+function toolsConfig() { try { const v = JSON.parse(localStorage.getItem(TOOLS_KEY)); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; } }
+function setToolsConfig(c) { try { localStorage.setItem(TOOLS_KEY, JSON.stringify(c)); } catch (e) {} }
+function toolsOn() { return toolsConfig().enabled === true; }
+function toolEnabled(name) { return toolsConfig()[name] !== false; }   // each tool on by default once tools are enabled
+function enabledToolSchemas() { return Object.keys(TOOL_DEFS).filter(toolEnabled).map((k) => TOOL_DEFS[k].schema); }
+function renderToolList() {
+  if (!els.toolList) return;
+  const on = toolsOn();
+  els.toolList.innerHTML = '';
+  for (const [key, def] of Object.entries(TOOL_DEFS)) {
+    const row = document.createElement('label'); row.className = 'tool-row';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = toolEnabled(key); cb.disabled = !on;
+    cb.addEventListener('change', () => { const c = toolsConfig(); c[key] = cb.checked; setToolsConfig(c); });
+    const name = document.createElement('b'); name.textContent = def.label;
+    const blurb = document.createElement('span'); blurb.textContent = ' — ' + def.blurb;
+    row.append(cb, name, blurb); els.toolList.appendChild(row);
+  }
+}
+
+// Rebuild the model-facing message list, expanding stored tool rounds so the
+// model sees prior tool calls + results on follow-up turns.
+function expandConversation() {
+  const out = [];
+  for (const m of current.messages) {
+    if (m.role === 'user') { out.push({ role: 'user', content: m.content }); continue; }
+    if (m.role !== 'assistant') continue;
+    if (m.toolRounds && m.toolRounds.length) {
+      for (const tr of m.toolRounds) {
+        out.push({ role: 'assistant', content: '', tool_calls: [{ function: { name: tr.name, arguments: tr.args || {} } }] });
+        out.push({ role: 'tool', content: String(tr.result == null ? '' : tr.result) });
+      }
+    }
+    out.push({ role: 'assistant', content: m.content || '' });
+  }
+  return out;
+}
+
 /* ---------- Streaming ---------- */
 function setStreaming(on) {
   streaming = on;
@@ -1309,43 +1411,73 @@ async function streamAssistant() {
   const a = buildAssistantNode();
   controller = new AbortController();
   setStreaming(true);
+
+  const sysMsgs = [];
+  const proj = projectOf(current);
+  if (proj) sysMsgs.push({ role: 'system', content: compileProjectContext(proj) });
+  const scaf = activeScaffold();
+  if (scaf) { sysMsgs.push({ role: 'system', content: compileScaffold(scaf) }); touchScaffold(scaf.id); }
+  if (visualsOn()) sysMsgs.push({ role: 'system', content: VISUALS_HINT });
+  const sys = effectiveSystem().trim();
+  if (sys) sysMsgs.push({ role: 'system', content: sys });
+
+  const toolSchemas = toolsOn() ? enabledToolSchemas() : [];
+  const toolsActive = toolSchemas.length > 0;
+  const convo = [...sysMsgs, ...expandConversation()];
+  const toolRounds = [];
   let acc = '', accThink = '', stats = null, firstTok = false, sawContent = false, failed = false;
+
   try {
-    const reqMsgs = [];
-    const proj = projectOf(current);
-    if (proj) reqMsgs.push({ role: 'system', content: compileProjectContext(proj) });
-    const scaf = activeScaffold();
-    if (scaf) { reqMsgs.push({ role: 'system', content: compileScaffold(scaf) }); touchScaffold(scaf.id); }
-    if (visualsOn()) reqMsgs.push({ role: 'system', content: VISUALS_HINT });
-    const sys = effectiveSystem().trim();
-    if (sys) reqMsgs.push({ role: 'system', content: sys });
-    for (const m of current.messages) reqMsgs.push({ role: m.role, content: m.content });
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ model: els.model.value, messages: reqMsgs, options: buildOptions() }),
-      signal: controller.signal,
-    });
-    if (resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
-    if (!resp.ok || !resp.body) { const d = await resp.text().catch(() => ''); throw new Error('Request failed (' + resp.status + ') ' + d.slice(0, 160)); }
-    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
-    while (true) {
-      const { value, done } = await reader.read(); if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        const t = line.trim(); if (!t) continue;
-        let obj; try { obj = JSON.parse(t); } catch (e) { continue; }
-        if (obj.error) throw new Error(obj.error);
-        const msg = obj.message || {};
-        if (msg.thinking) { if (!firstTok) { firstTok = true; a.clearTyping(); } accThink += msg.thinking; a.setThinking(accThink); maybeScroll(); }
-        if (msg.content) {
-          if (!firstTok) { firstTok = true; a.clearTyping(); }
-          if (!sawContent) { sawContent = true; a.collapseThinking(); }
-          acc += msg.content; a.bubble.textContent = acc; a.bubble.classList.add('cursor'); maybeScroll();
+    for (let iter = 0; iter < 8; iter++) {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ model: els.model.value, messages: convo, options: buildOptions(), ...(toolsActive ? { tools: toolSchemas } : {}) }),
+        signal: controller.signal,
+      });
+      if (resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
+      if (!resp.ok || !resp.body) { const d = await resp.text().catch(() => ''); throw new Error('Request failed (' + resp.status + ') ' + d.slice(0, 160)); }
+      const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      let turnContent = '', toolCalls = [];
+      while (true) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          let obj; try { obj = JSON.parse(t); } catch (e) { continue; }
+          if (obj.error) throw new Error(obj.error);
+          const msg = obj.message || {};
+          if (msg.thinking) { if (!firstTok) { firstTok = true; a.clearTyping(); } accThink += msg.thinking; a.setThinking(accThink); maybeScroll(); }
+          if (msg.content) {
+            if (!firstTok) { firstTok = true; a.clearTyping(); }
+            if (!sawContent) { sawContent = true; a.collapseThinking(); }
+            turnContent += msg.content; acc += msg.content; a.bubble.textContent = acc; a.bubble.classList.add('cursor'); maybeScroll();
+          }
+          if (msg.tool_calls && msg.tool_calls.length) for (const tc of msg.tool_calls) toolCalls.push(tc);
+          if (obj.done) stats = { eval_count: obj.eval_count, eval_duration: obj.eval_duration };
         }
-        if (obj.done) stats = { eval_count: obj.eval_count, eval_duration: obj.eval_duration };
       }
+      if (toolsActive && toolCalls.length) {
+        a.clearTyping();
+        convo.push({ role: 'assistant', content: turnContent, tool_calls: toolCalls });
+        for (const tc of toolCalls) {
+          const name = tc.function && tc.function.name;
+          let args = tc.function && tc.function.arguments;
+          if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = {}; } }
+          args = args || {};
+          const def = TOOL_DEFS[name];
+          const ui = a.addToolCall(name || 'tool', JSON.stringify(args, null, 2));
+          let result;
+          if (!def) { result = 'Error: unknown tool "' + name + '"'; ui.setError(result); }
+          else { try { result = await def.run(args); ui.setResult(result); } catch (e) { result = 'Error: ' + (e.message || e); ui.setError(result); } }
+          result = (typeof result === 'string') ? result : JSON.stringify(result);
+          toolRounds.push({ name, args, result });
+          convo.push({ role: 'tool', content: result });
+        }
+        continue;   // re-request with tool results
+      }
+      break;        // no tool calls → final answer
     }
   } catch (e) {
     if (e.name !== 'AbortError') { failed = true; showErr(e.message || 'Something went wrong.'); }
@@ -1354,15 +1486,15 @@ async function streamAssistant() {
   setStreaming(false); controller = null;
   a.clearTyping(); a.bubble.classList.remove('cursor');
 
-  if (failed && !acc && !accThink) { a.wrap.remove(); return; }
+  if (failed && !acc && !accThink && !toolRounds.length) { a.wrap.remove(); return; }
 
   if (acc) { renderAssistantHTML(a.bubble, acc); a.bubble.dataset.raw = acc; }
-  else if (!accThink) { a.bubble.textContent = '…'; }
+  else if (!accThink) { a.bubble.textContent = toolRounds.length ? '' : '…'; }
   a.collapseThinking();
   if (stats) a.setStats(stats);
   a.addActions();
 
-  current.messages.push({ role: 'assistant', content: acc, thinking: accThink || undefined, stats: stats || undefined });
+  current.messages.push({ role: 'assistant', content: acc, thinking: accThink || undefined, stats: stats || undefined, toolRounds: toolRounds.length ? toolRounds : undefined });
   if (current.title === 'New chat') {
     const fu = current.messages.find((m) => m.role === 'user');
     if (fu) {
@@ -1542,6 +1674,7 @@ els.pStop.addEventListener('input', () => {
 });
 els.setReset.addEventListener('click', resetSettings);
 els.visualsToggle.addEventListener('change', () => { try { localStorage.setItem(VISUALS_KEY, els.visualsToggle.checked ? '1' : '0'); } catch (e) {} });
+els.toolsToggle.addEventListener('change', () => { const c = toolsConfig(); c.enabled = els.toolsToggle.checked; setToolsConfig(c); renderToolList(); });
 
 els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); openModelModal(); });
 els.mmClose.addEventListener('click', closeModelModal);

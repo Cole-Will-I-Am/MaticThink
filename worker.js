@@ -144,6 +144,7 @@ async function handleChat(request, env) {
   const requested = typeof body.model === "string" ? body.model.trim() : "";
   const model = requested || env.DEFAULT_MODEL || modelList(env)[0];
   const options = sanitizeOptions(body.options);
+  const tools = Array.isArray(body.tools) && body.tools.length ? body.tools : undefined;
   track(env, "chat", "sent", model);
 
   let upstream;
@@ -151,7 +152,7 @@ async function handleChat(request, env) {
     upstream = await fetch(upstreamBase(env) + "/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: auth },
-      body: JSON.stringify({ model, messages, stream: true, ...(options ? { options } : {}) }),
+      body: JSON.stringify({ model, messages, stream: true, ...(options ? { options } : {}), ...(tools ? { tools } : {}) }),
     });
   } catch {
     return json({ error: "Could not reach the model backend." }, 502);
@@ -170,11 +171,37 @@ async function handleChat(request, env) {
   });
 }
 
+// Server-side fetch for the `fetch_url` tool — avoids browser CORS and keeps a
+// few safety limits (auth required, http(s) only, internal hosts blocked).
+async function handleFetch(request, env) {
+  if (!bearer(request)) return json({ error: "Unauthorized" }, 401);
+  let target;
+  try { target = new URL(new URL(request.url).searchParams.get("url") || ""); } catch { return json({ error: "Invalid URL" }, 400); }
+  if (!/^https?:$/.test(target.protocol)) return json({ error: "Only http(s) URLs are allowed." }, 400);
+  const host = target.hostname.toLowerCase();
+  if (/^(localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host.endsWith(".internal") || host.endsWith(".local")) {
+    return json({ error: "That host is blocked." }, 400);
+  }
+  try {
+    const r = await fetch(target.toString(), { headers: { "user-agent": "manticthink-tool/1.0", accept: "text/*, application/json, */*" }, redirect: "follow" });
+    const ct = r.headers.get("content-type") || "";
+    let text = await r.text();
+    if (/html/i.test(ct)) {
+      text = text.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+    }
+    return json({ url: target.toString(), status: r.status, text: text.slice(0, 8000) }, 200);
+  } catch {
+    return json({ error: "Could not fetch that URL." }, 502);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/api/models") return json({ models: modelList(env) });
     if (url.pathname === "/api/catalog") return handleCatalog(request, env);
+    if (url.pathname === "/api/fetch") return handleFetch(request, env);
     if (url.pathname === "/api/validate") {
       if (request.method !== "POST") return json({ error: "Use POST." }, 405);
       return handleValidate(request, env);
