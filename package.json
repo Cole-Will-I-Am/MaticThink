@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "description": "SEER · Mantic Think — a SEER-styled, bring-your-own-key Ollama chat website on a Cloudflare Worker.",
   "main": "worker.js",
+  "type": "module",
   "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [],
   "author": "Colton Williams (https://www.linkedin.com/in/colton-williams)",

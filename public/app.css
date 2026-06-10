@@ -71,6 +71,8 @@ body::before {
 .hint { font-size: 12px; color: var(--text-tertiary); text-align: center; line-height: 1.5; }
 .hint a { color: var(--accent); text-decoration: none; }
 .gate-err { color: var(--danger); font-size: 12px; min-height: 14px; text-align: center; }
+.gate-remember { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+.gate-remember input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
 .gate-credit { margin-top: 22px; font-size: 11px; letter-spacing: 0.04em; color: var(--text-tertiary); }
 .gate-credit a { color: var(--text-secondary); text-decoration: none; }
 .gate-credit a:hover { color: var(--accent); text-decoration: underline; }

@@ -2,9 +2,23 @@
 'use strict';
 
 const KEY_STORE = 'mt_ollama_key';
+const REMEMBER_KEY = 'mt_remember_key';
 const $ = (id) => document.getElementById(id);
+
+// API key storage: persistent (localStorage) is opt-in; otherwise session-only
+// (sessionStorage, cleared when the tab closes) to limit XSS exposure.
+function readKey() { try { return sessionStorage.getItem(KEY_STORE) || localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+function writeKey(key, persist) {
+  try {
+    localStorage.setItem(REMEMBER_KEY, persist ? '1' : '0');
+    if (persist) { localStorage.setItem(KEY_STORE, key); sessionStorage.removeItem(KEY_STORE); }
+    else { sessionStorage.setItem(KEY_STORE, key); localStorage.removeItem(KEY_STORE); }
+  } catch (e) {}
+}
+function clearKey() { try { localStorage.removeItem(KEY_STORE); sessionStorage.removeItem(KEY_STORE); } catch (e) {} }
+function rememberPref() { try { return localStorage.getItem(REMEMBER_KEY) !== '0'; } catch (e) { return true; } }
 const els = {
-  gate: $('gate'), keyInput: $('keyInput'), gateErr: $('gateErr'), connect: $('connect'),
+  gate: $('gate'), keyInput: $('keyInput'), gateErr: $('gateErr'), connect: $('connect'), rememberKey: $('rememberKey'),
   app: $('app'), scrim: $('scrim'), sidebar: $('sidebar'), convList: $('convList'),
   newChat: $('newChat'), disconnect: $('disconnect'), menuBtn: $('menuBtn'),
   model: $('model'), headerTitle: $('headerTitle'),
@@ -695,7 +709,7 @@ function renderSnippets() {
   }
 }
 
-let apiKey = localStorage.getItem(KEY_STORE) || '';
+let apiKey = readKey();
 let current = null;              // active conversation { id, title, model, messages: [] }
 let streaming = false;
 let controller = null;
@@ -1132,13 +1146,13 @@ async function connect() {
   els.connect.disabled = true; els.connect.textContent = 'Connecting…';
   try {
     const res = await validateKey(key);
-    if (res.ok) { apiKey = key; localStorage.setItem(KEY_STORE, key); await loadModels(); enterApp(); }
+    if (res.ok) { apiKey = key; writeKey(key, !els.rememberKey || els.rememberKey.checked); await loadModels(); enterApp(); }
     else els.gateErr.textContent = res.error || 'That key was rejected.';
   } catch (e) { els.gateErr.textContent = 'Network error. Try again.'; }
   finally { els.connect.disabled = false; els.connect.textContent = 'Connect'; }
 }
 function disconnect() {
-  apiKey = ''; localStorage.removeItem(KEY_STORE);
+  apiKey = ''; clearKey();
   current = null; els.keyInput.value = '';
   showApp(false);  // conversations are kept in storage
 }
@@ -1350,9 +1364,15 @@ const TOOL_DEFS = {
     run: (a) => runPyCapture(a.code || ''),
   },
   calculator: {
-    label: 'Calculator', blurb: 'Evaluate a math expression',
-    schema: { type: 'function', function: { name: 'calculator', description: 'Evaluate a single arithmetic/JavaScript math expression and return the result.', parameters: { type: 'object', properties: { expression: { type: 'string', description: 'e.g. (1234*56)/7' } }, required: ['expression'] } } },
-    run: (a) => runJsCapture('console.log(' + (a.expression || '0') + ')'),
+    label: 'Calculator', blurb: 'Evaluate an arithmetic expression',
+    schema: { type: 'function', function: { name: 'calculator', description: 'Evaluate a single arithmetic expression (digits and + - * / % . parentheses only) and return the result. For anything more, use run_javascript.', parameters: { type: 'object', properties: { expression: { type: 'string', description: 'e.g. (1234*56)/7' } }, required: ['expression'] } } },
+    run: (a) => {
+      const expr = String(a.expression || '').trim();
+      if (!expr || !/^[0-9+\-*/%.()eE\s]+$/.test(expr)) {
+        return Promise.resolve('Error: the calculator only accepts arithmetic (digits and + - * / % . ( ) ). Use run_javascript for anything else.');
+      }
+      return runJsCapture('console.log(' + expr + ')');
+    },
   },
   fetch_url: {
     label: 'Fetch URL', blurb: 'Read a public web page / API',
@@ -1731,10 +1751,11 @@ els.pjPasteAdd.addEventListener('click', () => {
 
 /* ---------- Boot ---------- */
 (async function boot() {
+  if (els.rememberKey) els.rememberKey.checked = rememberPref();
   if (apiKey) {
     const res = await validateKey(apiKey).catch(() => ({ ok: false }));
     if (res.ok) { await loadModels(); enterApp(); return; }
-    localStorage.removeItem(KEY_STORE); apiKey = '';
+    clearKey(); apiKey = '';
   }
   showApp(false);
 })();

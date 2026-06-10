@@ -37,9 +37,10 @@
     <div class="card">
       <input id="keyInput" type="password" placeholder="Paste your Ollama API key" autocomplete="off" spellcheck="false" />
       <div class="gate-err" id="gateErr"></div>
+      <label class="gate-remember"><input id="rememberKey" type="checkbox" checked /> <span>Keep me signed in on this device</span></label>
       <button class="btn-primary" id="connect">Connect</button>
       <div class="hint">
-        Bring your own key. It is stored only in this browser and sent directly to Ollama through our proxy — never saved on our servers.<br/>
+        Bring your own key — sent directly to Ollama through our proxy, never saved on our servers. Checked: stored in this browser until you sign out. Unchecked: kept only for this tab and cleared when you close it.<br/>
         <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">Get an Ollama API key →</a>
       </div>
     </div>

@@ -10,6 +10,8 @@
 //   CHAT_MODELS      comma-separated model list shown in the picker
 //   DEFAULT_MODEL    model used when a request omits one
 
+import { sanitizeOptions, isBlockedHost } from "./worker-lib.mjs";
+
 const FALLBACK_MODELS = "gpt-oss:120b-cloud,qwen3-coder:480b-cloud,deepseek-v3.1:671b-cloud";
 
 // Cross-origin isolation — required so the page can use SharedArrayBuffer /
@@ -44,39 +46,6 @@ function modelList(env) {
 function bearer(request) {
   const auth = request.headers.get("authorization") || "";
   return /^bearer\s+\S+/i.test(auth) ? auth : null;
-}
-
-// Whitelist + clamp client-supplied sampling options before forwarding upstream.
-const OPTION_BOUNDS = {
-  temperature: [0, 2], top_p: [0, 1], top_k: [0, 200],
-  min_p: [0, 1], repeat_penalty: [0, 2],
-};
-function sanitizeOptions(raw) {
-  if (!raw || typeof raw !== "object") return undefined;
-  const out = {};
-  for (const [k, [lo, hi]] of Object.entries(OPTION_BOUNDS)) {
-    const v = raw[k];
-    if (typeof v === "number" && isFinite(v)) out[k] = Math.min(hi, Math.max(lo, v));
-  }
-  // num_predict: -1 means "until context fills"; otherwise clamp to a generous ceiling.
-  if (typeof raw.num_predict === "number" && isFinite(raw.num_predict)) {
-    const n = Math.trunc(raw.num_predict);
-    if (n === -1) out.num_predict = -1;
-    else if (n >= 1) out.num_predict = Math.min(131072, n);
-  }
-  // seed: any non-negative integer, for reproducible sampling.
-  if (typeof raw.seed === "number" && isFinite(raw.seed)) {
-    out.seed = Math.max(0, Math.trunc(raw.seed));
-  }
-  // stop: up to 8 non-empty strings (<=64 chars each) that halt generation.
-  if (Array.isArray(raw.stop)) {
-    const stop = raw.stop
-      .filter((s) => typeof s === "string" && s.length)
-      .slice(0, 8)
-      .map((s) => s.slice(0, 64));
-    if (stop.length) out.stop = stop;
-  }
-  return Object.keys(out).length ? out : undefined;
 }
 
 function upstreamBase(env) {
@@ -178,14 +147,30 @@ async function handleFetch(request, env) {
   let target;
   try { target = new URL(new URL(request.url).searchParams.get("url") || ""); } catch { return json({ error: "Invalid URL" }, 400); }
   if (!/^https?:$/.test(target.protocol)) return json({ error: "Only http(s) URLs are allowed." }, 400);
-  const host = target.hostname.toLowerCase();
-  if (/^(localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host.endsWith(".internal") || host.endsWith(".local")) {
-    return json({ error: "That host is blocked." }, 400);
-  }
+  if (isBlockedHost(target.hostname)) return json({ error: "That host is blocked." }, 400);
   try {
-    const r = await fetch(target.toString(), { headers: { "user-agent": "manticthink-tool/1.0", accept: "text/*, application/json, */*" }, redirect: "follow" });
+    const r = await fetch(target.toString(), {
+      headers: { "user-agent": "manticthink-tool/1.0", accept: "text/*, application/json, */*" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    });
+    // Re-check the final URL after any redirects.
+    try { if (isBlockedHost(new URL(r.url).hostname)) return json({ error: "Redirected to a blocked host." }, 400); } catch (e) {}
+    // Bounded read: pull at most ~64 KB from the stream rather than buffering the whole body.
+    const CAP = 64 * 1024;
+    let text = "", total = 0;
+    if (r.body) {
+      const reader = r.body.getReader();
+      const dec = new TextDecoder("utf-8", { fatal: false });
+      while (total < CAP) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        text += dec.decode(value, { stream: true });
+      }
+      try { await reader.cancel(); } catch (e) {}
+    }
     const ct = r.headers.get("content-type") || "";
-    let text = await r.text();
     if (/html/i.test(ct)) {
       text = text.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
         .replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
