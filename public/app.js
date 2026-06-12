@@ -1223,7 +1223,7 @@ function addUserBubble(text, attachments) {
 function buildAssistantNode() {
   const wrap = document.createElement('div'); wrap.className = 'msg assistant';
   const col = document.createElement('div'); col.className = 'col';
-  const role = document.createElement('div'); role.className = 'role'; role.textContent = 'SEER';
+  const role = document.createElement('div'); role.className = 'role'; role.textContent = 'SƎER';
   col.appendChild(role);
   const bubble = document.createElement('div'); bubble.className = 'bubble plain';
   const typing = document.createElement('span'); typing.className = 'typing';
