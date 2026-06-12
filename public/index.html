@@ -51,6 +51,13 @@
         Bring your own key — sent directly to Ollama through our proxy, never saved on our servers. Checked: stored in this browser until you sign out. Unchecked: kept only for this tab and cleared when you close it.<br/>
         <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">Get an Ollama API key →</a>
       </div>
+      <div class="gate-or"><span></span><em>or</em><span></span></div>
+      <button class="btn-secondary" id="connectLocal" type="button">Use local Ollama</button>
+      <div class="local-hint hidden" id="localHint">
+        Chats with the Ollama running on <em>your</em> machine — requests never touch our servers. Start it with CORS enabled:
+        <code>OLLAMA_ORIGINS=https://manticthink.com ollama serve</code>
+        <span class="local-note">Needs Chrome, Edge, or Firefox — Safari blocks localhost from https sites.</span>
+      </div>
     </div>
     <ul class="gate-features" aria-label="Features">
       <li><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.8 1.5 3.5 9h3.7l-.9 5.5L11.5 7H7.8l1-5.5z"/></svg> Streaming replies</li>
@@ -97,6 +104,7 @@
           <img class="wordmark" src="/seer-wordmark.svg" alt="SEER" />
           <span class="tagline" id="headerTitle">Mantic Think</span>
         </div>
+        <span id="modeBadge" class="mode-badge hidden" title="Connected to your local Ollama — requests never leave your machine">Local</span>
         <span class="spacer"></span>
         <select id="model" title="Model"></select>
         <span id="hdrTools" class="hdr-tools">

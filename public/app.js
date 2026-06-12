@@ -17,8 +17,33 @@ function writeKey(key, persist) {
 }
 function clearKey() { try { localStorage.removeItem(KEY_STORE); sessionStorage.removeItem(KEY_STORE); } catch (e) {} }
 function rememberPref() { try { return localStorage.getItem(REMEMBER_KEY) !== '0'; } catch (e) { return true; } }
+
+// Connection mode: 'cloud' (key via our proxy) or 'local' (the browser talks
+// straight to the user's own Ollama instance — requests never touch our
+// servers). Local model list is kept under its own storage key so switching
+// modes doesn't clobber the cloud list.
+const MODE_KEY = 'mt_mode';
+const LOCAL_URL_KEY = 'mt_local_url';
+const LOCAL_MODELS_KEY = 'mt_models_local';
+let localMode = (() => { try { return localStorage.getItem(MODE_KEY) === 'local'; } catch (e) { return false; } })();
+function setLocalMode(on) { localMode = on; try { localStorage.setItem(MODE_KEY, on ? 'local' : 'cloud'); } catch (e) {} }
+function localBase() {
+  try { return (localStorage.getItem(LOCAL_URL_KEY) || 'http://localhost:11434').replace(/\/+$/, ''); }
+  catch (e) { return 'http://localhost:11434'; }
+}
+async function probeLocal(timeoutMs) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs || 4000);
+  try {
+    const r = await fetch(localBase() + '/api/tags', { signal: ctrl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    return (d.models || []).map((m) => m.name).filter(Boolean);
+  } finally { clearTimeout(t); }
+}
 const els = {
   gate: $('gate'), keyInput: $('keyInput'), gateErr: $('gateErr'), connect: $('connect'), rememberKey: $('rememberKey'),
+  connectLocal: $('connectLocal'), localHint: $('localHint'), modeBadge: $('modeBadge'),
   app: $('app'), scrim: $('scrim'), sidebar: $('sidebar'), convList: $('convList'),
   newChat: $('newChat'), disconnect: $('disconnect'), menuBtn: $('menuBtn'),
   model: $('model'), headerTitle: $('headerTitle'),
@@ -1047,7 +1072,7 @@ function relTime(ts) {
 }
 
 /* ---------- Auth / gate ---------- */
-function authHeader() { return { authorization: 'Bearer ' + apiKey }; }
+function authHeader() { return localMode ? {} : { authorization: 'Bearer ' + apiKey }; }
 function showApp(show) {
   els.gate.classList.toggle('hidden', show);
   els.app.classList.toggle('hidden', !show);
@@ -1058,13 +1083,14 @@ const MODELS_KEY = 'mt_models';
 let catalogModels = [];
 let catalogLoaded = false;
 
+function modelsKey() { return localMode ? LOCAL_MODELS_KEY : MODELS_KEY; }
 function getUserModels() {
-  try { const v = JSON.parse(localStorage.getItem(MODELS_KEY)); if (Array.isArray(v) && v.length) return v; } catch (e) {}
+  try { const v = JSON.parse(localStorage.getItem(modelsKey())); if (Array.isArray(v) && v.length) return v; } catch (e) {}
   return null;
 }
 function setUserModels(list) {
   const uniq = [...new Set(list.filter(Boolean))];
-  try { localStorage.setItem(MODELS_KEY, JSON.stringify(uniq)); } catch (e) {}
+  try { localStorage.setItem(modelsKey(), JSON.stringify(uniq)); } catch (e) {}
   return uniq;
 }
 function populateModelSelect() {
@@ -1075,6 +1101,13 @@ function populateModelSelect() {
   if (list.includes(cur)) els.model.value = cur;
 }
 async function loadModels() {
+  if (localMode) {
+    // Refresh from the live local instance so the list always matches what's
+    // actually pulled; fall back to the cached list if it's unreachable.
+    try { const names = await probeLocal(); if (names.length) setUserModels(names); } catch (e) {}
+    populateModelSelect();
+    return;
+  }
   if (!getUserModels()) {                       // seed from the site default once
     try { const r = await fetch('/api/models'); const d = await r.json(); if (d.models && d.models.length) setUserModels(d.models); } catch (e) {}
   }
@@ -1131,8 +1164,12 @@ function openModelModal() {
   closeSettings();
   els.mmInput.value = ''; els.mmSearch.value = '';
   els.modelModal.classList.remove('hidden');
+  // The catalog is the cloud catalog — hide it when chatting with a local
+  // instance (its models are whatever the user has pulled).
+  const catalogSection = els.mmCatalog.closest('.mm-section');
+  if (catalogSection) catalogSection.classList.toggle('hidden', localMode);
   renderYours(); renderCatalog();
-  if (!catalogLoaded) loadCatalog();
+  if (!localMode && !catalogLoaded) loadCatalog();
 }
 function closeModelModal() { els.modelModal.classList.add('hidden'); }
 async function validateKey(key) {
@@ -1151,9 +1188,33 @@ async function connect() {
   } catch (e) { els.gateErr.textContent = 'Network error. Try again.'; }
   finally { els.connect.disabled = false; els.connect.textContent = 'Connect'; }
 }
+async function connectLocal() {
+  els.gateErr.textContent = '';
+  els.connectLocal.disabled = true; els.connectLocal.textContent = 'Connecting…';
+  try {
+    const names = await probeLocal();
+    if (!names.length) {
+      els.gateErr.textContent = 'Connected, but no local models found — run e.g. `ollama pull llama3.2` first.';
+      return;
+    }
+    setLocalMode(true);
+    setUserModels(names);
+    populateModelSelect();
+    updateModeBadge();
+    enterApp();
+  } catch (e) {
+    els.localHint.classList.remove('hidden');
+    els.gateErr.textContent = 'Couldn’t reach Ollama at ' + localBase() + ' — see the steps below.';
+  } finally { els.connectLocal.disabled = false; els.connectLocal.textContent = 'Use local Ollama'; }
+}
+function updateModeBadge() {
+  if (els.modeBadge) els.modeBadge.classList.toggle('hidden', !localMode);
+}
 function disconnect() {
+  if (localMode) setLocalMode(false);
   apiKey = ''; clearKey();
   current = null; els.keyInput.value = '';
+  updateModeBadge();
   showApp(false);  // conversations are kept in storage
 }
 function enterApp() {
@@ -1449,13 +1510,21 @@ async function streamAssistant() {
 
   try {
     for (let iter = 0; iter < 8; iter++) {
-      const resp = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...authHeader() },
-        body: JSON.stringify({ model: els.model.value, messages: convo, options: buildOptions(), ...(toolsActive ? { tools: toolSchemas } : {}) }),
-        signal: controller.signal,
-      });
-      if (resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
+      let resp;
+      try {
+        resp = await fetch(localMode ? localBase() + '/api/chat' : '/api/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...authHeader() },
+          body: JSON.stringify({ model: els.model.value, messages: convo, options: buildOptions(), ...(toolsActive ? { tools: toolSchemas } : {}) }),
+          signal: controller.signal,
+        });
+      } catch (e) {
+        if (localMode && e.name !== 'AbortError') {
+          throw new Error('Local Ollama unreachable — is it running with OLLAMA_ORIGINS=' + location.origin + ' ?');
+        }
+        throw e;
+      }
+      if (!localMode && resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
       if (!resp.ok || !resp.body) { const d = await resp.text().catch(() => ''); throw new Error('Request failed (' + resp.status + ') ' + d.slice(0, 160)); }
       const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
       let turnContent = '', toolCalls = [];
@@ -1640,6 +1709,7 @@ function closeDrawer() { document.body.classList.remove('drawer-open'); }
 
 /* ---------- Events ---------- */
 els.connect.addEventListener('click', connect);
+if (els.connectLocal) els.connectLocal.addEventListener('click', connectLocal);
 els.keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
 els.disconnect.addEventListener('click', disconnect);
 els.newChat.addEventListener('click', () => { newConversation(); closeDrawer(); });
@@ -1752,6 +1822,15 @@ els.pjPasteAdd.addEventListener('click', () => {
 /* ---------- Boot ---------- */
 (async function boot() {
   if (els.rememberKey) els.rememberKey.checked = rememberPref();
+  if (localMode) {
+    try {
+      const names = await probeLocal();
+      if (names.length) {
+        setUserModels(names); populateModelSelect(); updateModeBadge(); enterApp(); return;
+      }
+    } catch (e) {}
+    setLocalMode(false);  // local instance gone — fall back to the gate
+  }
   if (apiKey) {
     const res = await validateKey(apiKey).catch(() => ({ ok: false }));
     if (res.ok) { await loadModels(); enterApp(); return; }
