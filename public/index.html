@@ -178,6 +178,11 @@
       </div>
       <div class="mm-body">
         <div class="mm-section">
+          <div class="mm-label">Your presets</div>
+          <div id="mmPresets" class="mm-catalog preset-list"></div>
+          <button id="mmPresetNew" class="mm-add-btn" type="button">+ New preset</button>
+        </div>
+        <div class="mm-section">
           <div class="mm-label">Your models</div>
           <div id="mmYours" class="mm-chips"></div>
         </div>
@@ -192,6 +197,53 @@
           <div class="mm-label">Ollama catalog <span id="mmCount" class="mm-count"></span></div>
           <input id="mmSearch" class="mm-search" placeholder="Search the catalog…" autocomplete="off" />
           <div id="mmCatalog" class="mm-catalog"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model preset builder -->
+  <div id="presetModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="pmTitle">New preset</span>
+        <button id="pmClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div id="pmErr" class="gate-err"></div>
+        <div class="set-section">
+          <div class="mm-label">Basics</div>
+          <label class="set-field set-field-wide">Name
+            <input id="pmName" type="text" maxlength="60" placeholder="Support Bot" autocomplete="off" />
+          </label>
+          <label class="set-field set-field-wide">Base model
+            <select id="pmBase" class="pm-select"></select>
+          </label>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Personality / system prompt</div>
+          <textarea id="pmSystem" class="set-textarea" spellcheck="false" placeholder="You are a concise support analyst. Always ask one clarifying question before answering…"></textarea>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Generation <span class="sc-opt">optional — blank uses defaults</span></div>
+          <div class="set-grid">
+            <label class="set-field">Temperature (0–2)
+              <input id="pmTemp" type="number" min="0" max="2" step="0.05" placeholder="—" />
+            </label>
+            <label class="set-field">Top P (0–1)
+              <input id="pmTopP" type="number" min="0" max="1" step="0.01" placeholder="—" />
+            </label>
+            <label class="set-field">Top K (0–200)
+              <input id="pmTopK" type="number" min="0" max="200" step="1" placeholder="—" />
+            </label>
+            <label class="set-field">Max tokens
+              <input id="pmMaxTok" type="number" min="-1" step="1" placeholder="—" />
+            </label>
+          </div>
+        </div>
+        <div class="sp-foot set-foot">
+          <button id="pmSave" class="mm-add-btn" type="button">Save preset</button>
+          <button id="pmCancel" class="sp-link" type="button">Cancel</button>
         </div>
       </div>
     </div>

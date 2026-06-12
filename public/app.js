@@ -57,6 +57,11 @@ const els = {
   manageModelsBtn: $('manageModelsBtn'), modelModal: $('modelModal'), mmClose: $('mmClose'),
   mmYours: $('mmYours'), mmInput: $('mmInput'), mmAdd: $('mmAdd'),
   mmSearch: $('mmSearch'), mmCatalog: $('mmCatalog'), mmCount: $('mmCount'),
+  mmPresets: $('mmPresets'), mmPresetNew: $('mmPresetNew'),
+  presetModal: $('presetModal'), pmTitle: $('pmTitle'), pmClose: $('pmClose'), pmErr: $('pmErr'),
+  pmName: $('pmName'), pmBase: $('pmBase'), pmSystem: $('pmSystem'),
+  pmTemp: $('pmTemp'), pmTopP: $('pmTopP'), pmTopK: $('pmTopK'), pmMaxTok: $('pmMaxTok'),
+  pmSave: $('pmSave'), pmCancel: $('pmCancel'),
   scaffoldBtn: $('scaffoldBtn'), scaffoldBar: $('scaffoldBar'),
   scaffoldModal: $('scaffoldModal'), scClose: $('scClose'), scSearch: $('scSearch'),
   scNew: $('scNew'), scList: $('scList'), scTemplates: $('scTemplates'),
@@ -282,6 +287,25 @@ function loadScaffolds() { try { const v = JSON.parse(localStorage.getItem(SCAFF
 function saveScaffolds(list) { try { localStorage.setItem(SCAFFOLDS_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
 function getScaffold(id) { return loadScaffolds().find((s) => s.id === id) || null; }
 function uidS() { return (crypto && crypto.randomUUID) ? crypto.randomUUID() : 's' + Date.now() + Math.random().toString(16).slice(2); }
+
+/* ---------- Model presets (saved custom "models": base + system + params) ---------- */
+const PRESETS_KEY = 'mt_presets';
+function loadPresets() { try { const v = JSON.parse(localStorage.getItem(PRESETS_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function savePresets(list) { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
+function getPreset(id) { return loadPresets().find((p) => p.id === id) || null; }
+function upsertPreset(p) { const all = loadPresets().filter((x) => x.id !== p.id); all.unshift(p); return savePresets(all); }
+function deletePresetById(id) { savePresets(loadPresets().filter((p) => p.id !== id)); }
+// Apply by COPYING onto the conversation — deliberately not via setSystem/
+// setParam, which write through to the global defaults for unrelated chats.
+// Editing a preset later doesn't retroactively change old conversations.
+function applyPreset(conv, p) {
+  if (!conv || !p) return;
+  conv.presetId = p.id;
+  conv.model = p.model;
+  conv.system = p.system || '';
+  conv.params = Object.assign({}, p.params || {});
+  if (conv.messages.length) store.save(conv);
+}
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function draftToScaffold(d, existing) {
@@ -1101,10 +1125,29 @@ function populateModelSelect() {
   // Empty value → the Worker substitutes its DEFAULT_MODEL; the literal string
   // "default" would be sent upstream verbatim and fail.
   const list = getUserModels() || [''];
+  const presets = loadPresets();
   const cur = els.model.value;
   els.model.innerHTML = '';
+  if (presets.length) {
+    const og = document.createElement('optgroup'); og.label = 'Your presets';
+    for (const p of presets) {
+      const o = document.createElement('option'); o.value = 'preset:' + p.id; o.textContent = '★ ' + p.name;
+      og.appendChild(o);
+    }
+    els.model.appendChild(og);
+  }
   for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m || 'default'; els.model.appendChild(o); }
-  if (list.includes(cur)) els.model.value = cur;
+  const values = presets.map((p) => 'preset:' + p.id).concat(list);
+  if (values.includes(cur)) els.model.value = cur;
+}
+// The picker may hold a preset value; requests always need the base model name.
+function selectedModel() {
+  const v = els.model.value;
+  if (v && v.startsWith('preset:')) {
+    const p = getPreset(v.slice(7));
+    return p ? p.model : ((current && current.model) || '');
+  }
+  return v;
 }
 async function loadModels() {
   if (localMode) {
@@ -1178,8 +1221,115 @@ function openModelModal() {
   // instance (its models are whatever the user has pulled).
   const catalogSection = els.mmCatalog.closest('.mm-section');
   if (catalogSection) catalogSection.classList.toggle('hidden', localMode);
-  renderYours(); renderCatalog();
+  renderPresetList(); renderYours(); renderCatalog();
   if (!localMode && !catalogLoaded) loadCatalog();
+}
+
+/* ---------- Preset manage list + builder ---------- */
+let presetEditingId = null;
+function renderPresetList() {
+  const all = loadPresets();
+  els.mmPresets.innerHTML = '';
+  if (!all.length) {
+    els.mmPresets.innerHTML = '<div class="mm-empty">No presets yet — bundle a base model with a personality and settings, then pick it like any model.</div>';
+    return;
+  }
+  for (const p of all) {
+    const row = document.createElement('div'); row.className = 'mm-row';
+    const name = document.createElement('span'); name.textContent = '★ ' + p.name;
+    const base = document.createElement('em'); base.className = 'preset-base'; base.textContent = p.model || 'default';
+    const acts = document.createElement('div'); acts.className = 'preset-acts';
+    const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use';
+    use.addEventListener('click', () => {
+      populateModelSelect();
+      els.model.value = 'preset:' + p.id;
+      if (current) applyPreset(current, p);
+      closeModelModal();
+    });
+    const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Edit';
+    edit.addEventListener('click', () => openPresetBuilder(p));
+    const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete';
+    del.addEventListener('click', () => {
+      if (!confirm('Delete the preset “' + p.name + '”? Conversations that used it keep their settings.')) return;
+      const wasSelected = els.model.value === 'preset:' + p.id;
+      deletePresetById(p.id);
+      if (current && current.presetId === p.id) {
+        delete current.presetId;
+        if (current.messages.length) store.save(current);
+      }
+      populateModelSelect();
+      if (wasSelected && current && current.model) {
+        // The deleted preset was selected — fall back to the conversation's
+        // own base model, not whatever sits first in the picker.
+        if (![...els.model.options].some((o) => o.value === current.model)) {
+          const o = document.createElement('option'); o.value = current.model; o.textContent = current.model;
+          els.model.appendChild(o);
+        }
+        els.model.value = current.model;
+      }
+      renderPresetList();
+    });
+    acts.append(use, edit, del);
+    row.append(name, base, acts);
+    els.mmPresets.appendChild(row);
+  }
+}
+function openPresetBuilder(p) {
+  presetEditingId = p ? p.id : null;
+  els.pmTitle.textContent = p ? 'Edit preset' : 'New preset';
+  els.pmErr.textContent = '';
+  els.pmBase.innerHTML = '';
+  const models = getUserModels() || [];
+  for (const m of models) { const o = document.createElement('option'); o.value = m; o.textContent = m || 'default'; els.pmBase.appendChild(o); }
+  if (p && p.model && !models.includes(p.model)) {
+    const o = document.createElement('option'); o.value = p.model; o.textContent = p.model;
+    els.pmBase.appendChild(o);
+  }
+  els.pmName.value = p ? p.name : '';
+  els.pmBase.value = p ? p.model : (models[0] || '');
+  els.pmSystem.value = p ? (p.system || '') : '';
+  const params = (p && p.params) || {};
+  els.pmTemp.value = params.temperature ?? '';
+  els.pmTopP.value = params.top_p ?? '';
+  els.pmTopK.value = params.top_k ?? '';
+  els.pmMaxTok.value = params.num_predict ?? '';
+  els.modelModal.classList.add('hidden');
+  els.presetModal.classList.remove('hidden');
+  els.pmName.focus();
+}
+function closePresetBuilder(backToModels) {
+  els.presetModal.classList.add('hidden');
+  presetEditingId = null;
+  if (backToModels) openModelModal();
+}
+function savePresetBuilder() {
+  const name = els.pmName.value.trim();
+  if (!name) { els.pmErr.textContent = 'Give the preset a name.'; return; }
+  const params = {};
+  const readNum = (el, key, min, max, integer) => {
+    const raw = el.value.trim();
+    if (raw === '') return true;
+    const n = parseFloat(raw);
+    if (!isFinite(n) || n < min || n > max) return false;
+    params[key] = integer ? Math.round(n) : n;
+    return true;
+  };
+  if (!readNum(els.pmTemp, 'temperature', 0, 2)) { els.pmErr.textContent = 'Temperature must be between 0 and 2.'; return; }
+  if (!readNum(els.pmTopP, 'top_p', 0, 1)) { els.pmErr.textContent = 'Top P must be between 0 and 1.'; return; }
+  if (!readNum(els.pmTopK, 'top_k', 0, 200, true)) { els.pmErr.textContent = 'Top K must be between 0 and 200.'; return; }
+  if (!readNum(els.pmMaxTok, 'num_predict', -1, 1000000, true)) { els.pmErr.textContent = 'Max tokens must be -1 or higher.'; return; }
+  const existing = presetEditingId ? getPreset(presetEditingId) : null;
+  const p = {
+    id: existing ? existing.id : uidS(),
+    name, model: els.pmBase.value, system: els.pmSystem.value, params,
+    createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
+  };
+  if (!upsertPreset(p)) {
+    els.pmErr.textContent = 'Couldn’t save — this browser’s storage is full. Delete old conversations and try again.';
+    return;
+  }
+  populateModelSelect();
+  closePresetBuilder(true);
 }
 function closeModelModal() { els.modelModal.classList.add('hidden'); }
 async function validateKey(key) {
@@ -1238,7 +1388,9 @@ function enterApp() {
 
 /* ---------- Conversations ---------- */
 function newConversation() {
-  current = { id: uid(), title: 'New chat', model: els.model.value, messages: [], updatedAt: Date.now(), projectId: activeProjectId || null };
+  current = { id: uid(), title: 'New chat', model: selectedModel(), messages: [], updatedAt: Date.now(), projectId: activeProjectId || null };
+  const pv = els.model.value;
+  if (pv.startsWith('preset:')) { const p = getPreset(pv.slice(7)); if (p) applyPreset(current, p); }
   store.setActive(current.id);
   renderConversation(); renderSidebar();
   els.input.focus();
@@ -1251,7 +1403,9 @@ function openConversation(id) {
     conv.params = conv.params || {}; conv.params.temperature = conv.temperature;
   }
   current = conv; store.setActive(id);
-  if (conv.model) {
+  if (conv.presetId && getPreset(conv.presetId)) {
+    els.model.value = 'preset:' + conv.presetId;
+  } else if (conv.model) {
     // Keep the conversation on its own model even if it's gone from the list
     // (e.g. created in local mode, opened in cloud mode) — silently
     // substituting another model is worse than an explicit upstream error.
@@ -1543,7 +1697,7 @@ async function streamAssistant() {
         resp = await fetch(localMode ? localBase() + '/api/chat' : '/api/chat', {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...authHeader() },
-          body: JSON.stringify({ model: els.model.value, messages: convo, options: buildOptions(), ...(toolsActive ? { tools: toolSchemas } : {}) }),
+          body: JSON.stringify({ model: selectedModel(), messages: convo, options: buildOptions(), ...(toolsActive ? { tools: toolSchemas } : {}) }),
           signal: controller.signal,
         });
       } catch (e) {
@@ -1769,7 +1923,17 @@ els.disconnect.addEventListener('click', disconnect);
 els.newChat.addEventListener('click', () => { newConversation(); closeDrawer(); });
 els.menuBtn.addEventListener('click', openDrawer);
 els.scrim.addEventListener('click', closeDrawer);
-els.model.addEventListener('change', () => { if (current) { current.model = els.model.value; } });
+els.model.addEventListener('change', () => {
+  if (!current) return;
+  const v = els.model.value;
+  if (v.startsWith('preset:')) {
+    const p = getPreset(v.slice(7));
+    if (p) applyPreset(current, p);
+    return;
+  }
+  current.model = v;
+  if (current.presetId) { delete current.presetId; if (current.messages.length) store.save(current); }
+});
 els.send.addEventListener('click', () => { if (streaming) { if (controller) controller.abort(); } else send(); });
 els.attachBtn.addEventListener('click', () => els.fileInput.click());
 els.fileInput.addEventListener('change', () => { addFiles(els.fileInput.files); els.fileInput.value = ''; });
@@ -1842,6 +2006,11 @@ els.toolsToggle.addEventListener('change', () => { const c = toolsConfig(); c.en
 
 els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); openModelModal(); });
 els.mmClose.addEventListener('click', closeModelModal);
+els.mmPresetNew.addEventListener('click', () => openPresetBuilder(null));
+els.pmSave.addEventListener('click', savePresetBuilder);
+els.pmCancel.addEventListener('click', () => closePresetBuilder(true));
+els.pmClose.addEventListener('click', () => closePresetBuilder(true));
+els.presetModal.addEventListener('click', (e) => { if (e.target === els.presetModal) closePresetBuilder(true); });
 els.modelModal.addEventListener('click', (e) => { if (e.target === els.modelModal) closeModelModal(); });
 els.mmAdd.addEventListener('click', () => { addModel(els.mmInput.value); els.mmInput.value = ''; });
 els.mmInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { addModel(els.mmInput.value); els.mmInput.value = ''; } });
