@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SƎER Support · Mantic Think</title>
+<meta name="description" content="Support for SEER — the private Ollama chat for web and iOS. Contact, troubleshooting, and common questions." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://manticthink.com/support" />
+<link rel="icon" type="image/png" href="/seer-emblem.png" />
+<style>
+  :root {
+    --bg: #08080a; --surface: #131319; --text: #e9e9ee; --text2: #a6a6b2;
+    --muted: #71717f; --accent: #6179ff; --accent-2: #8c61f2; --border: rgba(255,255,255,0.09);
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; line-height: 1.7; }
+  body::before { content: ""; position: fixed; top: -200px; left: 50%; width: 640px; height: 640px; transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(97,121,255,0.10), rgba(140,97,242,0.05) 40%, transparent 70%); filter: blur(40px); pointer-events: none; z-index: 0; }
+  .wrap { position: relative; z-index: 1; max-width: 760px; margin: 0 auto; padding: 56px 22px 96px; }
+  header { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; margin-bottom: 40px; }
+  .wordmark { height: 26px; width: auto; }
+  .wordmark img { height: 100%; width: auto; display: block; }
+  h1 { font-size: 26px; font-weight: 500; margin: 8px 0 2px; letter-spacing: 0.01em; }
+  .back { font-size: 12px; color: var(--accent); text-decoration: none; }
+  .back:hover { text-decoration: underline; }
+  h2 { font-size: 16px; font-weight: 600; margin: 34px 0 10px; color: var(--text); border-top: 0.5px solid var(--border); padding-top: 22px; }
+  p, li { font-size: 15px; color: var(--text2); }
+  p { margin: 0 0 14px; }
+  ul { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 6px 0; }
+  strong { color: var(--text); font-weight: 600; }
+  a { color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); border: 0.5px solid var(--border); border-radius: 5px; padding: 1px 5px; color: var(--text); }
+  .contact-card { background: var(--surface); border: 0.5px solid var(--border); border-radius: 14px; padding: 18px 20px; margin: 8px 0 6px; }
+  .contact-card p { margin: 0; }
+  footer { margin-top: 48px; padding-top: 22px; border-top: 0.5px solid var(--border); font-size: 12px; color: var(--muted); text-align: center; }
+  footer a { color: var(--text2); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="wordmark" href="/" aria-label="SEER home"><img src="/seer-wordmark.svg" alt="SEER" /></a>
+      <h1>SƎER Support</h1>
+      <a class="back" href="/">← Back to the app</a>
+    </header>
+
+    <h2>Contact</h2>
+    <div class="contact-card">
+      <p>Email <a href="mailto:licensing@manticthink.com">licensing@manticthink.com</a> — for bugs, include what you did, what you expected, and what happened instead. For the iOS app, add your device model and iOS version. We typically reply within a couple of days.</p>
+    </div>
+
+    <h2>Common issues — web</h2>
+    <ul>
+      <li><strong>“That key was rejected.”</strong> Create or check your API key at <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">ollama.com/settings/keys</a>, then paste the whole key with no extra spaces.</li>
+      <li><strong>Local mode can't connect.</strong> Start Ollama with CORS enabled — <code>OLLAMA_ORIGINS=https://manticthink.com ollama serve</code> — and use Chrome, Edge, or Firefox (Safari blocks pages from reaching localhost). If your browser asks for local-network permission, allow it once.</li>
+      <li><strong>Local mode connects but shows no models.</strong> Pull one first, e.g. <code>ollama pull llama3.2</code>, then reconnect.</li>
+      <li><strong>My conversations disappeared.</strong> Chats live only in your browser's storage — clearing site data, private windows, or switching browsers/devices means they won't be there. Nothing is stored on our servers, so we can't recover them.</li>
+      <li><strong>“Storage full” when saving.</strong> Browser storage is limited; delete old conversations or large project files to free space.</li>
+      <li><strong>A model errors or stops mid-reply.</strong> Try again, pick a different model from the picker, or lower Max tokens in Settings — some upstream models rate-limit under load.</li>
+    </ul>
+
+    <h2>Common issues — iOS app</h2>
+    <ul>
+      <li><strong>Getting the beta:</strong> install TestFlight, then join via <a href="https://testflight.apple.com/join/6Nx2uD3f" target="_blank" rel="noopener">our TestFlight link</a>.</li>
+      <li><strong>Sign-in:</strong> the app uses the same bring-your-own Ollama key as the website; there is no account to create.</li>
+      <li><strong>Microphone/dictation:</strong> if dictation does nothing, allow Microphone and Speech Recognition for SEER in iOS Settings → Privacy &amp; Security.</li>
+      <li><strong>Found a bug?</strong> TestFlight's “Send Beta Feedback” (screenshot → share) attaches useful diagnostics automatically — or email us.</li>
+    </ul>
+
+    <h2>Quick answers</h2>
+    <p>“Do I need an account?”, “Where is my data stored?”, and other common questions are answered in the <a href="/#gate">FAQ on the home page</a>. How we handle data is covered in the <a href="/privacy">privacy policy</a>.</p>
+
+    <footer>SƎER · Mantic Think — © 2026 Colton Williams · <a href="/">Home</a> · <a href="/privacy">Privacy</a></footer>
+  </div>
+</body>
+</html>
