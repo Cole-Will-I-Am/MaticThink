@@ -67,6 +67,7 @@ const els = {
   debateBtn: $('debateBtn'), debateModal: $('debateModal'), dbClose: $('dbClose'),
   dbTopic: $('dbTopic'), dbModelA: $('dbModelA'), dbModelB: $('dbModelB'),
   dbMode: $('dbMode'), dbRounds: $('dbRounds'), dbStart: $('dbStart'), dbStop: $('dbStop'), dbFeed: $('dbFeed'),
+  dbSave: $('dbSave'), dbSavedBtn: $('dbSavedBtn'), dbSaved: $('dbSaved'),
   scaffoldModal: $('scaffoldModal'), scClose: $('scClose'), scSearch: $('scSearch'),
   scNew: $('scNew'), scList: $('scList'), scTemplates: $('scTemplates'),
   scaffoldBuilder: $('scaffoldBuilder'), sbTitle: $('sbTitle'), sbClose: $('sbClose'), sbErrors: $('sbErrors'),
@@ -2136,18 +2137,99 @@ try { if (localStorage.getItem(SIDEBAR_KEY) === '1') setSidebarCollapsed(true, f
    not touch the chat conversation/store/streaming state. */
 let debateController = null;
 let debateRunning = false;
+let currentDebate = null;   // { topic, modelA, modelB, mode, labels, rounds, transcript } of the live/last run
+
+const DEBATES_KEY = 'mt_debates';
+function loadDebates() { try { const v = JSON.parse(localStorage.getItem(DEBATES_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function saveDebatesList(list) { try { localStorage.setItem(DEBATES_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
+function updateSavedCount() { const n = loadDebates().length; els.dbSavedBtn.textContent = n ? `Saved (${n})` : 'Saved'; }
 
 function openDebate() {
   fillDebateModels();
   els.dbStop.classList.add('hidden');
+  els.dbSave.classList.add('hidden');
+  els.dbSaved.classList.add('hidden');
+  els.dbFeed.classList.remove('hidden');
   els.dbStart.classList.remove('hidden');
   els.dbStart.disabled = false;
+  updateSavedCount();
   els.debateModal.classList.remove('hidden');
   els.dbTopic.focus();
 }
 function closeDebate() {
   if (debateController) { try { debateController.abort(); } catch (e) {} }
   els.debateModal.classList.add('hidden');
+}
+
+function saveCurrentDebate() {
+  if (!currentDebate || !currentDebate.transcript.length) return;
+  const list = loadDebates();
+  const rec = {
+    id: uid(),
+    topic: currentDebate.topic,
+    modelA: currentDebate.modelA, modelB: currentDebate.modelB,
+    mode: currentDebate.mode, labels: currentDebate.labels,
+    transcript: currentDebate.transcript,
+    savedAt: Date.now(),
+  };
+  list.unshift(rec);
+  if (list.length > 100) list.length = 100;
+  if (!saveDebatesList(list)) { showErr('Couldn’t save — this browser’s storage is full.'); return; }
+  updateSavedCount();
+  els.dbSave.textContent = '★ Saved'; els.dbSave.classList.add('saved'); els.dbSave.disabled = true;
+}
+
+function showSavedPanel() {
+  renderSavedDebates();
+  els.dbFeed.classList.add('hidden');
+  els.dbSaved.classList.remove('hidden');
+}
+function hideSavedPanel() {
+  els.dbSaved.classList.add('hidden');
+  els.dbFeed.classList.remove('hidden');
+}
+function toggleSavedPanel() { if (els.dbSaved.classList.contains('hidden')) showSavedPanel(); else hideSavedPanel(); }
+
+function renderSavedDebates() {
+  const list = loadDebates();
+  els.dbSaved.innerHTML = '';
+  if (!list.length) { const e = document.createElement('div'); e.className = 'db-saved-empty'; e.textContent = 'No saved debates yet. Run one and tap ★ Save.'; els.dbSaved.appendChild(e); return; }
+  for (const rec of list) {
+    const item = document.createElement('div'); item.className = 'db-saved-item';
+    const main = document.createElement('div'); main.className = 'db-saved-main';
+    const topic = document.createElement('div'); topic.className = 'db-saved-topic'; topic.textContent = rec.topic;
+    const meta = document.createElement('div'); meta.className = 'db-saved-meta';
+    const when = new Date(rec.savedAt);
+    meta.textContent = `${rec.modelA} vs ${rec.modelB} · ${rec.mode === 'debate' ? 'Debate' : 'Discussion'} · ${when.toLocaleDateString()}`;
+    main.append(topic, meta);
+    main.addEventListener('click', () => loadDebateRecord(rec));
+    const del = document.createElement('button'); del.className = 'db-saved-del'; del.type = 'button'; del.textContent = '✕'; del.title = 'Delete';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      saveDebatesList(loadDebates().filter((d) => d.id !== rec.id));
+      updateSavedCount(); renderSavedDebates();
+    });
+    item.append(main, del); els.dbSaved.appendChild(item);
+  }
+}
+
+function loadDebateRecord(rec) {
+  // Restore setup fields (best-effort — model may no longer be in the list).
+  els.dbTopic.value = rec.topic;
+  if ([...els.dbModelA.options].some((o) => o.value === rec.modelA)) els.dbModelA.value = rec.modelA;
+  if ([...els.dbModelB.options].some((o) => o.value === rec.modelB)) els.dbModelB.value = rec.modelB;
+  els.dbMode.value = rec.mode;
+  // Render the saved transcript into the feed (read-only review).
+  els.dbFeed.innerHTML = '';
+  const labels = rec.labels || (rec.mode === 'debate' ? { A: 'Proponent', B: 'Opponent' } : { A: 'Analyst A', B: 'Analyst B' });
+  addDebateHeader(rec.topic, rec.modelA, rec.modelB, labels);
+  for (const t of rec.transcript) {
+    const node = addDebateTurn(t.label, t.model, t.side);
+    node.finalize(t.text);
+  }
+  currentDebate = { topic: rec.topic, modelA: rec.modelA, modelB: rec.modelB, mode: rec.mode, labels, rounds: 0, transcript: rec.transcript };
+  els.dbSave.classList.add('hidden');   // already saved
+  hideSavedPanel();
 }
 function fillDebateModels() {
   const opts = [...els.model.options].filter((o) => !o.value.startsWith('preset:') && o.value);
@@ -2247,11 +2329,15 @@ async function runDebate() {
   debateRunning = true;
   els.dbStart.disabled = true;
   els.dbStop.classList.remove('hidden');
+  els.dbSave.classList.add('hidden');
+  els.dbSave.classList.remove('saved'); els.dbSave.textContent = '★ Save'; els.dbSave.disabled = false;
+  hideSavedPanel();
   els.dbFeed.innerHTML = '';
   debateController = new AbortController();
   addDebateHeader(topic, modelA, modelB, labels);
 
   const transcript = [];
+  currentDebate = { topic, modelA, modelB, mode, labels, rounds, transcript };
   try {
     outer:
     for (let r = 0; r < rounds; r++) {
@@ -2280,6 +2366,7 @@ async function runDebate() {
   els.dbStop.classList.add('hidden');
   els.dbStart.disabled = false;
   els.dbStart.textContent = 'Restart debate';
+  if (transcript.length) els.dbSave.classList.remove('hidden');
 }
 
 /* ---------- Events ---------- */
@@ -2299,6 +2386,8 @@ els.dbClose.addEventListener('click', closeDebate);
 els.debateModal.addEventListener('click', (e) => { if (e.target === els.debateModal) closeDebate(); });
 els.dbStart.addEventListener('click', runDebate);
 els.dbStop.addEventListener('click', () => { if (debateController) debateController.abort(); });
+els.dbSave.addEventListener('click', saveCurrentDebate);
+els.dbSavedBtn.addEventListener('click', toggleSavedPanel);
 els.model.addEventListener('change', () => {
   if (!current) return;
   const v = els.model.value;

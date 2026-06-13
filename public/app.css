@@ -524,6 +524,18 @@ select#model {
 .db-turn.db-B .db-speaker { color: #d49a6e; }
 .db-body { color: var(--text-primary); font-size: 14px; line-height: 1.6; }
 .db-err { color: var(--danger); font-size: 12.5px; }
+.db-ghost { background: var(--surface); color: var(--text-secondary); }
+.db-ghost:hover { color: var(--text-primary); }
+.db-save.saved { background: var(--accent-soft); color: var(--accent); }
+.db-saved { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.db-saved-empty { color: var(--text-tertiary); font-size: 12.5px; text-align: center; padding: 24px 0; }
+.db-saved-item { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 0.5px solid var(--border); border-radius: 11px; cursor: pointer; }
+.db-saved-item:hover { border-color: rgba(97,121,255,0.4); }
+.db-saved-main { flex: 1; min-width: 0; }
+.db-saved-topic { font-size: 13.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-saved-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; letter-spacing: 0.02em; }
+.db-saved-del { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 13px; flex-shrink: 0; padding: 4px 6px; }
+.db-saved-del:hover { color: var(--danger); }
 
 /* model management modal */
 .modal {
