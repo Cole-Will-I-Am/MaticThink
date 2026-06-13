@@ -407,6 +407,23 @@ select#model {
 .tool-row input { width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; }
 .tool-row input:disabled { opacity: 0.4; }
 .tool-row b { color: var(--text-primary); font-weight: 500; }
+.tool-row.conflict { opacity: 0.5; }
+.mcp-tool-row { padding-left: 18px; }
+/* MCP connectors */
+.mcp-server-row { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; font-size: 12.5px; color: var(--text-secondary); }
+.mcp-server-row input { width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; }
+.mcp-server-row b { color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.mcp-meta { flex: 1; font-size: 11px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); flex-shrink: 0; }
+.mcp-dot.ok { background: var(--success); }
+.mcp-dot.error { background: var(--danger); }
+.mcp-dot.connecting { background: var(--accent); }
+.mcp-act { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 13px; padding: 2px 5px; flex-shrink: 0; }
+.mcp-act:hover { color: var(--accent); }
+.mcp-add { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.mcp-add .mm-add-btn { align-self: flex-start; }
+#mcpErr { text-align: left; min-height: 0; margin-top: 6px; }
+#mcpErr:empty { display: none; }
 
 /* tool calls in chat */
 .toolcall { margin: 0.5em 0; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg-primary); overflow: hidden; }

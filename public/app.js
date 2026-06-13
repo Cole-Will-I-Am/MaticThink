@@ -54,6 +54,7 @@ const els = {
   paramSliders: $('paramSliders'), sysPrompt: $('sysPrompt'),
   pNumPredict: $('pNumPredict'), pSeed: $('pSeed'), pStop: $('pStop'), setReset: $('setReset'),
   visualsToggle: $('visualsToggle'), toolsToggle: $('toolsToggle'), toolList: $('toolList'),
+  mcpUrl: $('mcpUrl'), mcpToken: $('mcpToken'), mcpAdd: $('mcpAdd'), mcpErr: $('mcpErr'),
   manageModelsBtn: $('manageModelsBtn'), modelModal: $('modelModal'), mmClose: $('mmClose'),
   mmYours: $('mmYours'), mmInput: $('mmInput'), mmAdd: $('mmAdd'),
   mmSearch: $('mmSearch'), mmCatalog: $('mmCatalog'), mmCount: $('mmCount'),
@@ -1625,7 +1626,160 @@ function toolsConfig() { try { const v = JSON.parse(localStorage.getItem(TOOLS_K
 function setToolsConfig(c) { try { localStorage.setItem(TOOLS_KEY, JSON.stringify(c)); } catch (e) {} }
 function toolsOn() { return toolsConfig().enabled === true; }
 function toolEnabled(name) { return toolsConfig()[name] !== false; }   // each tool on by default once tools are enabled
-function enabledToolSchemas() { return Object.keys(TOOL_DEFS).filter(toolEnabled).map((k) => TOOL_DEFS[k].schema); }
+
+/* ---------- MCP connectors (remote servers over Streamable HTTP) ----------
+   Browser-direct: the page speaks JSON-RPC to the user's own MCP server; the
+   server must allow CORS from this origin (same posture as local Ollama).
+   No-auth or static bearer token only — no OAuth in v1. */
+const MCP_KEY = 'mt_mcp_servers';
+const mcpSessions = {};   // id -> { sessionId, protocolVersion } (per page load)
+const mcpStatus = {};     // id -> 'off' | 'connecting' | 'ok' | 'error: …'
+function loadMcpServers() { try { const v = JSON.parse(localStorage.getItem(MCP_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function saveMcpServers(list) { try { localStorage.setItem(MCP_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
+function getMcpServer(id) { return loadMcpServers().find((s) => s.id === id) || null; }
+function updateMcpServer(id, patch) {
+  const all = loadMcpServers();
+  const s = all.find((x) => x.id === id);
+  if (!s) return null;
+  Object.assign(s, patch);
+  saveMcpServers(all);
+  return s;
+}
+
+// A Streamable HTTP response is either plain JSON or an SSE stream whose
+// `data:` lines carry JSON-RPC messages; resolve on the matching id.
+async function mcpParseResponse(resp, wantId) {
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('text/event-stream')) {
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const events = buf.split('\n\n'); buf = events.pop();
+      for (const ev of events) {
+        const data = ev.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+        if (!data) continue;
+        let msg; try { msg = JSON.parse(data); } catch (e) { continue; }
+        if (msg.id === wantId) { try { reader.cancel(); } catch (e) {} return msg; }
+      }
+    }
+    throw new Error('stream ended without a response');
+  }
+  const text = await resp.text();
+  return text ? JSON.parse(text) : null;
+}
+
+let _mcpRpcId = 0;
+async function mcpRpc(server, method, params, isNotification) {
+  const sess = mcpSessions[server.id] || {};
+  const id = isNotification ? undefined : ++_mcpRpcId;
+  const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  if (sess.sessionId) headers['mcp-session-id'] = sess.sessionId;
+  if (sess.protocolVersion) headers['mcp-protocol-version'] = sess.protocolVersion;
+  if (server.token) headers.authorization = 'Bearer ' + server.token;
+  const resp = await fetch(server.url, {
+    method: 'POST', headers,
+    body: JSON.stringify({ jsonrpc: '2.0', ...(isNotification ? {} : { id }), method, ...(params !== undefined ? { params } : {}) }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const sid = resp.headers.get('mcp-session-id');
+  if (sid) (mcpSessions[server.id] = mcpSessions[server.id] || {}).sessionId = sid;
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    const err = new Error('HTTP ' + resp.status + (detail ? ' — ' + detail.slice(0, 120) : ''));
+    err.httpStatus = resp.status;
+    throw err;
+  }
+  if (isNotification) { try { if (resp.body) await resp.body.cancel(); } catch (e) {} return null; }
+  const msg = await mcpParseResponse(resp, id);
+  if (msg && msg.error) throw new Error(msg.error.message || ('MCP error ' + msg.error.code));
+  return msg ? msg.result : null;
+}
+
+async function mcpConnect(server) {
+  mcpStatus[server.id] = 'connecting';
+  try {
+    delete mcpSessions[server.id];
+    const init = await mcpRpc(server, 'initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'seer-web', version: '1.0' },
+    });
+    (mcpSessions[server.id] = mcpSessions[server.id] || {}).protocolVersion = (init && init.protocolVersion) || '2025-03-26';
+    await mcpRpc(server, 'notifications/initialized', undefined, true);
+    const tools = [];
+    let cursor;
+    do {
+      const page = await mcpRpc(server, 'tools/list', cursor ? { cursor } : {});
+      for (const t of (page && page.tools) || []) {
+        tools.push({ name: t.name, description: t.description || '', inputSchema: t.inputSchema || { type: 'object' } });
+      }
+      cursor = page && page.nextCursor;
+    } while (cursor && tools.length < 200);
+    const label = server.label || (init && init.serverInfo && init.serverInfo.name) || new URL(server.url).hostname;
+    updateMcpServer(server.id, { tools, label });
+    mcpStatus[server.id] = 'ok';
+    return tools;
+  } catch (e) {
+    const hint = (e.name === 'TypeError')
+      ? 'unreachable — the server must allow cross-origin requests from this site'
+      : (e.message || String(e));
+    mcpStatus[server.id] = 'error: ' + hint;
+    throw e;
+  }
+}
+
+async function mcpCallTool(serverId, name, args) {
+  const server = getMcpServer(serverId);
+  if (!server) return 'Error: that MCP server was removed.';
+  const call = () => mcpRpc(server, 'tools/call', { name, arguments: args || {} });
+  let result;
+  try {
+    if (!mcpSessions[serverId]) await mcpConnect(server);
+    result = await call();
+  } catch (e) {
+    // Session may have expired (or this is the first call after a reload that
+    // raced a dead session) — reconnect once and retry.
+    try { await mcpConnect(server); result = await call(); }
+    catch (e2) { return 'Error: ' + (mcpStatus[serverId] || e2.message || e2); }
+  }
+  const parts = ((result && result.content) || []).map((c) => (c.type === 'text' ? (c.text || '') : '[' + (c.type || 'content') + ']'));
+  let text = parts.join('\n').slice(0, 8000);
+  if (result && result.isError) text = 'Error: ' + (text || 'tool failed');
+  return text || '(empty result)';
+}
+
+// name -> { serverId, tool } across enabled servers. First registration wins;
+// names colliding with built-ins or earlier servers are excluded and surfaced
+// as conflicts in the tools UI.
+function mcpToolIndex() {
+  const index = {}; const conflicts = new Set();
+  for (const server of loadMcpServers()) {
+    if (!server.enabled) continue;
+    for (const tool of server.tools || []) {
+      if (TOOL_DEFS[tool.name] || index[tool.name]) { conflicts.add(server.id + '/' + tool.name); continue; }
+      if (server.disabledTools && server.disabledTools[tool.name]) continue;
+      index[tool.name] = { serverId: server.id, tool };
+    }
+  }
+  mcpToolIndex._conflicts = conflicts;
+  return index;
+}
+function mcpToolDef(name) {
+  const entry = mcpToolIndex()[name];
+  if (!entry) return null;
+  return { run: (args) => mcpCallTool(entry.serverId, name, args) };
+}
+
+function enabledToolSchemas() {
+  const builtIn = Object.keys(TOOL_DEFS).filter(toolEnabled).map((k) => TOOL_DEFS[k].schema);
+  const mcp = Object.entries(mcpToolIndex()).map(([name, e]) => ({
+    type: 'function',
+    function: { name, description: e.tool.description, parameters: e.tool.inputSchema || { type: 'object' } },
+  }));
+  return builtIn.concat(mcp);
+}
 function renderToolList() {
   if (!els.toolList) return;
   const on = toolsOn();
@@ -1637,6 +1791,54 @@ function renderToolList() {
     const name = document.createElement('b'); name.textContent = def.label;
     const blurb = document.createElement('span'); blurb.textContent = ' — ' + def.blurb;
     row.append(cb, name, blurb); els.toolList.appendChild(row);
+  }
+  // MCP servers: a header row per server, then its tools as toggle rows.
+  mcpToolIndex();   // refresh conflict set
+  for (const server of loadMcpServers()) {
+    const head = document.createElement('div'); head.className = 'mcp-server-row';
+    const en = document.createElement('input'); en.type = 'checkbox'; en.checked = server.enabled !== false; en.disabled = !on;
+    en.title = 'Enable this server';
+    en.addEventListener('change', () => { updateMcpServer(server.id, { enabled: en.checked }); renderToolList(); });
+    const dot = document.createElement('span');
+    const status = mcpStatus[server.id] || (server.tools && server.tools.length ? 'ok' : 'off');
+    dot.className = 'mcp-dot ' + (status.startsWith('error') ? 'error' : status);
+    const name = document.createElement('b'); name.textContent = server.label || server.url;
+    const meta = document.createElement('span'); meta.className = 'mcp-meta';
+    meta.textContent = status.startsWith('error') ? status : ((server.tools || []).length + ' tool' + ((server.tools || []).length === 1 ? '' : 's'));
+    meta.title = meta.textContent;
+    const refresh = document.createElement('button'); refresh.type = 'button'; refresh.className = 'mcp-act'; refresh.textContent = '↻'; refresh.title = 'Reconnect';
+    refresh.addEventListener('click', () => {
+      mcpStatus[server.id] = 'connecting';
+      renderToolList();
+      mcpConnect(server).then(() => renderToolList()).catch(() => renderToolList());
+    });
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'mcp-act'; remove.textContent = '✕'; remove.title = 'Remove server';
+    remove.addEventListener('click', () => {
+      if (!confirm('Remove the MCP server “' + (server.label || server.url) + '”?')) return;
+      saveMcpServers(loadMcpServers().filter((s) => s.id !== server.id));
+      delete mcpSessions[server.id]; delete mcpStatus[server.id];
+      renderToolList();
+    });
+    head.append(en, dot, name, meta, refresh, remove);
+    els.toolList.appendChild(head);
+    if (server.enabled === false) continue;
+    for (const tool of server.tools || []) {
+      const row = document.createElement('label'); row.className = 'tool-row mcp-tool-row';
+      const conflict = mcpToolIndex._conflicts.has(server.id + '/' + tool.name);
+      if (conflict) row.classList.add('conflict');
+      const cb = document.createElement('input'); cb.type = 'checkbox';
+      cb.checked = !conflict && !(server.disabledTools && server.disabledTools[tool.name]);
+      cb.disabled = !on || conflict;
+      cb.addEventListener('change', () => {
+        const dt = Object.assign({}, server.disabledTools);
+        if (cb.checked) delete dt[tool.name]; else dt[tool.name] = true;
+        updateMcpServer(server.id, { disabledTools: dt });
+      });
+      const tn = document.createElement('b'); tn.textContent = tool.name;
+      const tb = document.createElement('span');
+      tb.textContent = conflict ? ' — name conflict, skipped' : (tool.description ? ' — ' + tool.description.slice(0, 80) : '');
+      row.append(cb, tn, tb); els.toolList.appendChild(row);
+    }
   }
 }
 
@@ -1744,7 +1946,7 @@ async function streamAssistant() {
           let args = tc.function && tc.function.arguments;
           if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = {}; } }
           args = args || {};
-          const def = TOOL_DEFS[name];
+          const def = TOOL_DEFS[name] || mcpToolDef(name);
           const ui = a.addToolCall(name || 'tool', JSON.stringify(args, null, 2));
           let result;
           if (!def) { result = 'Error: unknown tool "' + name + '"'; ui.setError(result); }
@@ -2003,6 +2205,25 @@ els.pStop.addEventListener('input', () => {
 els.setReset.addEventListener('click', resetSettings);
 els.visualsToggle.addEventListener('change', () => { try { localStorage.setItem(VISUALS_KEY, els.visualsToggle.checked ? '1' : '0'); } catch (e) {} });
 els.toolsToggle.addEventListener('change', () => { const c = toolsConfig(); c.enabled = els.toolsToggle.checked; setToolsConfig(c); renderToolList(); });
+els.mcpAdd.addEventListener('click', async () => {
+  els.mcpErr.textContent = '';
+  let url;
+  try { url = new URL(els.mcpUrl.value.trim()); } catch (e) { els.mcpErr.textContent = 'Enter a full URL, e.g. https://example.com/mcp'; return; }
+  if (!/^https?:$/.test(url.protocol)) { els.mcpErr.textContent = 'Only http(s) URLs are supported.'; return; }
+  const server = { id: uidS(), label: '', url: url.toString(), token: els.mcpToken.value.trim(), enabled: true, tools: [], disabledTools: {} };
+  const all = loadMcpServers(); all.push(server);
+  if (!saveMcpServers(all)) { els.mcpErr.textContent = 'Couldn’t save — this browser’s storage is full.'; return; }
+  els.mcpAdd.disabled = true; els.mcpAdd.textContent = 'Connecting…';
+  try {
+    await mcpConnect(server);
+    els.mcpUrl.value = ''; els.mcpToken.value = '';
+  } catch (e) {
+    els.mcpErr.textContent = (mcpStatus[server.id] || '').replace(/^error: /, '') || 'Connection failed.';
+  } finally {
+    els.mcpAdd.disabled = false; els.mcpAdd.textContent = 'Connect';
+    renderToolList();
+  }
+});
 
 els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); openModelModal(); });
 els.mmClose.addEventListener('click', closeModelModal);

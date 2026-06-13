@@ -1,6 +1,6 @@
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
-  Content-Security-Policy: default-src 'self'; script-src 'self' blob: 'unsafe-eval' https://cdn.jsdelivr.net/pyodide/ https://static.cloudflareinsights.com; worker-src 'self' blob:; connect-src 'self' https://api.github.com https://cdn.jsdelivr.net/pyodide/ https://cloudflareinsights.com http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' blob: 'unsafe-eval' https://cdn.jsdelivr.net/pyodide/ https://static.cloudflareinsights.com; worker-src 'self' blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

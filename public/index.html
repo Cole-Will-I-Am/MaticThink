@@ -289,7 +289,13 @@
           <div class="mm-label">Tools <span class="sc-opt">function calling</span></div>
           <label class="set-check"><input id="toolsToggle" type="checkbox" /> <span>Let the model call tools</span></label>
           <div id="toolList" class="tool-list"></div>
-          <div class="sp-hint">Only tool-capable models (e.g. gpt-oss, qwen3-coder) use these. The model can run code, do math, and fetch URLs in a sandbox; results are returned to it automatically.</div>
+          <div class="mcp-add">
+            <input id="mcpUrl" class="mm-search" placeholder="MCP server URL, e.g. https://example.com/mcp" autocomplete="off" spellcheck="false" />
+            <input id="mcpToken" class="mm-search" type="password" placeholder="Bearer token (optional)" autocomplete="off" />
+            <button id="mcpAdd" class="mm-add-btn" type="button">Connect</button>
+          </div>
+          <div id="mcpErr" class="gate-err"></div>
+          <div class="sp-hint">Only tool-capable models (e.g. gpt-oss, qwen3-coder) use these. Built-in tools run code, do math, and fetch URLs in a sandbox. You can also connect your own remote <b>MCP servers</b> — they're reached directly from your browser (the server must allow cross-origin requests from manticthink.com; tokens stay in this browser).</div>
         </div>
         <div class="sp-foot set-foot">
           <button id="setReset" class="sp-link" type="button">Reset to defaults</button>
