@@ -267,6 +267,19 @@ async function handleDebateGet(env, id) {
   return new Response(val, { status: 200, headers: { "content-type": "application/json; charset=utf-8" } });
 }
 
+// Social-unfurl meta (title/description) for a shared debate. HTMLRewriter
+// escapes the values, so a user-supplied topic is safe to inject.
+function debateMeta(rec, pageUrl) {
+  const topic = String(rec.topic || "AI Debate").replace(/\s+/g, " ").trim().slice(0, 140) || "AI Debate";
+  const a = rec.modelA || "Model A", b = rec.modelB || "Model B";
+  const verb = rec.mode === "discuss" ? "discuss" : "debate";
+  return {
+    title: ("AI Debate: " + topic).slice(0, 180),
+    desc: (`${a} vs ${b} ${verb} this on Mantic Think — read the full exchange, then start your own free AI debate.`).slice(0, 240),
+    url: pageUrl,
+  };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -295,13 +308,33 @@ export default {
       if (request.method !== "GET") return json({ error: "Use GET." }, 405);
       return handleDebateGet(env, decodeURIComponent(url.pathname.slice("/api/debate/".length)));
     }
-    // Short debate share links — serve the SPA so the client can load + render it.
+    // Short debate share links — serve the SPA (so the client renders the debate)
+    // and rewrite the OG/Twitter meta so the link unfurls nicely on social.
     if (/^\/d\/[A-Za-z0-9_-]+$/.test(url.pathname)) {
       const spa = await env.ASSETS.fetch(new Request(new URL("/", url)));
       const sh = new Headers(spa.headers);
       sh.set("Cross-Origin-Opener-Policy", "same-origin");
       sh.set("Cross-Origin-Embedder-Policy", "require-corp");
-      return new Response(spa.body, { status: spa.status, statusText: spa.statusText, headers: sh });
+      sh.delete("content-length");
+      let rec = null;
+      const id = url.pathname.slice(3);
+      if (env.DEBATES && /^[a-z0-9]{5,18}$/.test(id)) {
+        const v = await env.DEBATES.get(id);
+        if (v) { try { rec = JSON.parse(v); } catch (e) {} }
+      }
+      const base = new Response(spa.body, { status: spa.status, statusText: spa.statusText, headers: sh });
+      if (!rec) return base;
+      const meta = debateMeta(rec, url.origin + url.pathname);
+      return new HTMLRewriter()
+        .on("title", { element(e) { e.setInnerContent(meta.title); } })
+        .on('meta[name="description"]', { element(e) { e.setAttribute("content", meta.desc); } })
+        .on('meta[property="og:title"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[property="og:description"]', { element(e) { e.setAttribute("content", meta.desc); } })
+        .on('meta[property="og:url"]', { element(e) { e.setAttribute("content", meta.url); } })
+        .on('meta[property="og:image:alt"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[name="twitter:title"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[name="twitter:description"]', { element(e) { e.setAttribute("content", meta.desc); } })
+        .transform(base);
     }
     const assetRes = await env.ASSETS.fetch(request);
     const h = new Headers(assetRes.headers);
