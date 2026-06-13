@@ -538,6 +538,17 @@ select#model {
 .db-cta-text b { color: var(--text-primary); font-weight: 600; }
 .db-cta-acts { display: flex; gap: 8px; align-items: center; }
 .db-cta .btn-primary { padding: 9px 16px; font-size: 13px; width: auto; max-width: none; margin: 0; }
+
+/* On phones, give the transcript more room: tighten the setup, and once a debate
+   is running hide the topic box (it's echoed in the feed header). */
+@media (max-width: 760px) {
+  .db-setup { padding: 10px 12px; gap: 8px; }
+  .db-controls { gap: 6px; }
+  .db-card.db-active .set-textarea { display: none; }
+  .db-cta { padding: 12px; gap: 10px; }
+  .db-cta .btn-primary { width: 100%; }
+  .db-cta-acts { flex: 1; }
+}
 .db-body { color: var(--text-primary); font-size: 14px; line-height: 1.6; }
 .db-err { color: var(--danger); font-size: 12.5px; }
 .db-ghost { background: var(--surface); color: var(--text-secondary); }

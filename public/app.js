@@ -2166,6 +2166,7 @@ function startOwnFromShared() {
 
 function openDebate() {
   exitSharedView();
+  els.dbCard.classList.remove('db-active');
   fillDebateModels();
   els.dbStop.classList.add('hidden');
   els.dbSave.classList.add('hidden');
@@ -2429,6 +2430,7 @@ async function runDebate() {
   const labels = mode === 'debate' ? { A: 'Proponent', B: 'Opponent' } : { A: 'Analyst A', B: 'Analyst B' };
 
   debateRunning = true;
+  els.dbCard.classList.add('db-active');
   els.dbStart.disabled = true;
   els.dbStop.classList.remove('hidden');
   els.dbSave.classList.add('hidden');
